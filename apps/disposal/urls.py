@@ -1,0 +1,4 @@
+from django.urls import path
+from . import views
+app_name = "disposal"
+urlpatterns = [path("", views.disposal_list, name="list"), path("new/", views.disposal_create, name="create"), path("<int:pk>/edit/", views.disposal_update, name="update")]

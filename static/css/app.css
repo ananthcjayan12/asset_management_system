@@ -1,0 +1,9 @@
+body { background: #f5f7fa; }
+.card { border: 0; }
+.card-header { font-weight: 600; background: #fff; }
+.table th { white-space: nowrap; }
+form p label { display: block; font-weight: 600; margin-bottom: .25rem; }
+form p input:not([type=checkbox]), form p select, form p textarea { width: 100%; padding: .5rem .75rem; border: 1px solid #ced4da; border-radius: .375rem; }
+form p .helptext { display: block; color: #6c757d; font-size: .875rem; }
+.errorlist { color: #b02a37; }
+.qr-image { max-width: 280px; }

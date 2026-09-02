@@ -10,12 +10,12 @@
 <a class="navbar-brand" href="{% url 'core:dashboard' %}">Asset Management</a>
 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
 <div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="{% url 'assets:list' %}">Assets</a></li>
-<li class="nav-item"><a class="nav-link" href="{% url 'movements:list' %}">Movements</a></li>
-<li class="nav-item"><a class="nav-link" href="{% url 'gatepasses:list' %}">Gate Passes</a></li>
-<li class="nav-item"><a class="nav-link" href="{% url 'disposal:list' %}">Disposal</a></li>
-<li class="nav-item"><a class="nav-link" href="{% url 'reporting:dashboard' %}">Reports</a></li>
-<li class="nav-item"><a class="nav-link" href="{% url 'imports_app:list' %}">Import</a></li>
+{% if perms.assets.view_asset %}<li class="nav-item"><a class="nav-link" href="{% url 'assets:list' %}">Assets</a></li>{% endif %}
+{% if perms.movements.view_assetmovement %}<li class="nav-item"><a class="nav-link" href="{% url 'movements:list' %}">Movements</a></li>{% endif %}
+{% if perms.gatepasses.view_gatepass %}<li class="nav-item"><a class="nav-link" href="{% url 'gatepasses:list' %}">Gate Passes</a></li>{% endif %}
+{% if perms.disposal.view_disposalrecord %}<li class="nav-item"><a class="nav-link" href="{% url 'disposal:list' %}">Disposal</a></li>{% endif %}
+{% if perms.assets.view_asset %}<li class="nav-item"><a class="nav-link" href="{% url 'reporting:dashboard' %}">Reports</a></li>{% endif %}
+{% if perms.imports_app.view_importbatch %}<li class="nav-item"><a class="nav-link" href="{% url 'imports_app:list' %}">Import</a></li>{% endif %}
 {% if user.is_staff %}<li class="nav-item"><a class="nav-link" href="/admin/">Administration</a></li>{% endif %}
 </ul>{% if user.is_authenticated %}<span class="navbar-text me-3">{{ user.username }}</span><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="btn btn-outline-light btn-sm">Sign out</button></form>{% endif %}</div>
 </div></nav>

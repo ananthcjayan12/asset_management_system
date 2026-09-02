@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.core.exceptions import ValidationError
 from apps.assets.models import Asset
 from .models import GatePass, GatePassItem
 from .services import approve_gatepass, mark_outward, mark_inward
@@ -13,3 +14,17 @@ class GatePassTests(TestCase):
         asset.refresh_from_db(); self.assertEqual(asset.current_status, Asset.Status.OUTSIDE)
         mark_inward(gatepass=gp, user=user)
         gp.refresh_from_db(); asset.refresh_from_db(); self.assertEqual(gp.status, GatePass.Status.CLOSED); self.assertEqual(asset.current_status, Asset.Status.IN_STOCK)
+
+    def test_permanent_gatepass_remains_outward_without_inward_action(self):
+        user = get_user_model().objects.create_user("permanent-security")
+        asset = Asset.objects.create(asset_code="A2", transaction_id="T2", brief_description="Permanent pass asset")
+        gp = GatePass.objects.create(gatepass_type=GatePass.Type.PERMANENT, purpose="Permanent removal", requested_by=user)
+        GatePassItem.objects.create(gatepass=gp, asset=asset)
+        approve_gatepass(gatepass=gp, user=user)
+        mark_outward(gatepass=gp, user=user)
+        gp.refresh_from_db()
+        asset.refresh_from_db()
+        self.assertEqual(gp.status, GatePass.Status.OUTWARD)
+        self.assertEqual(asset.current_status, Asset.Status.OUTSIDE)
+        with self.assertRaisesMessage(ValidationError, "Only temporary gate passes"):
+            mark_inward(gatepass=gp, user=user)

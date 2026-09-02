@@ -10,3 +10,7 @@ backups/
 .coverage
 htmlcov/
 .DS_Store
+
+# Playwright guided demo artifacts
+e2e/artifacts/
+e2e/*.sqlite3

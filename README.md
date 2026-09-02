@@ -81,3 +81,28 @@ Always test restoration in a non-production environment and keep encrypted off-s
 - Restrict the application port to IIS or the private reverse-proxy interface.
 - Review group permissions and disable/remove demo records.
 - Complete user-acceptance, security, import-reconciliation and restore testing before go-live.
+
+## Guided Playwright feature tour
+
+A visible end-to-end demonstration and debugging suite is included under `e2e/`. It creates isolated `PWDEMO-*` records and temporary administrator/report-viewer accounts, demonstrates the main workflows one by one, records screenshots/video/trace/server logs, downloads the CSV report, and removes successful-run data automatically.
+
+Install the development dependencies once:
+
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+```
+
+Run the visible tour:
+
+```bash
+python e2e/run_demo.py
+```
+
+Run the fast headless form used by CI:
+
+```bash
+python e2e/run_demo.py --headless --pause-ms 0 --slow-mo 0
+```
+
+The runner uses a dedicated SQLite database under `e2e/artifacts/<timestamp>/` by default, so it does not modify the normal MySQL or `db.sqlite3` data. Failure state is retained for debugging; successful data is cleaned automatically. See `e2e/README.md` for safety flags and trace viewing instructions.

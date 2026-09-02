@@ -36,7 +36,7 @@ def mark_outward(*, gatepass, user):
         asset.save(update_fields=["current_status", "updated_at"])
         item.outward_scanned = True
         item.save(update_fields=["outward_scanned", "updated_at"])
-    gatepass.status = GatePass.Status.CLOSED if gatepass.gatepass_type == GatePass.Type.PERMANENT else GatePass.Status.OUTWARD
+    gatepass.status = GatePass.Status.OUTWARD
     gatepass.security_out_by = user
     gatepass.outward_at = timezone.now()
     gatepass.save(update_fields=["status", "security_out_by", "outward_at", "updated_at"])

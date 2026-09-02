@@ -1,0 +1,29 @@
+name: Playwright feature tour
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guided-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m unittest e2e.test_run_demo
+      - run: python manage.py check
+      - run: python manage.py test
+      - run: python e2e/run_demo.py --headless --pause-ms 0 --slow-mo 0
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-feature-tour
+          path: e2e/artifacts/
+          if-no-files-found: warn

@@ -50,21 +50,12 @@ TEMPLATES = [{
 WSGI_APPLICATION = "asset_management.wsgi.application"
 ASGI_APPLICATION = "asset_management.asgi.application"
 
-if os.getenv("MYSQL_DATABASE"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.mysql",
-            "NAME": os.getenv("MYSQL_DATABASE", "asset_management"),
-            "USER": os.getenv("MYSQL_USER", "asset_user"),
-            "PASSWORD": os.getenv("MYSQL_PASSWORD", "asset_password"),
-            "HOST": os.getenv("MYSQL_HOST", "db"),
-            "PORT": os.getenv("MYSQL_PORT", "3306"),
-            "OPTIONS": {"charset": "utf8mb4", "init_command": "SET sql_mode='STRICT_TRANS_TABLES'"},
-            "CONN_MAX_AGE": 60,
-        }
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": os.getenv("SQLITE_DATABASE_PATH", BASE_DIR / "db.sqlite3"),
     }
-else:
-    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": os.getenv("SQLITE_DATABASE_PATH", BASE_DIR / "db.sqlite3")}}
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -86,7 +77,8 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT", BASE_DIR / "media"))
+SERVE_MEDIA_FILES = os.getenv("DJANGO_SERVE_MEDIA", "True").lower() in {"1", "true", "yes"}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "accounts:login"

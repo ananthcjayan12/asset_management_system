@@ -10,6 +10,6 @@ printf 'This replaces files in the configured media volume. Type RESTORE to cont
 read answer
 [ "$answer" = "RESTORE" ] || { echo "Cancelled."; exit 1; }
 
-docker compose exec -T web sh -c 'find /app/media -mindepth 1 -delete'
-docker compose exec -T web tar xzf - -C /app/media < "$1"
+docker compose exec -T web sh -c 'find /app/data/media -mindepth 1 -delete'
+docker compose exec -T web tar xzf - -C /app/data/media < "$1"
 echo "Media restore completed."

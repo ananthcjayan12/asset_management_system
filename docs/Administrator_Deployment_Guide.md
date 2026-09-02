@@ -2,57 +2,73 @@
 
 ## Recommended topology
 
-Windows Server 2022 hosts IIS. Docker Desktop/Engine or an Ubuntu Hyper-V virtual machine runs the `web` and `db` containers. IIS terminates HTTPS and reverse-proxies to `127.0.0.1:8000`.
+Deploy the repository as one Dockerfile application in Coolify. The container runs Django with Gunicorn on port 8000. Coolify terminates HTTPS and automatically adds the Traefik routing configuration.
+
+SQLite and uploaded media share one persistent directory:
+
+- Database: `/app/data/db.sqlite3`
+- Uploaded media: `/app/data/media`
+- Coolify persistent storage destination: `/app/data`
 
 ## First deployment
 
-1. Extract the project to a controlled folder such as `C:\AssetSystem` or `/opt/asset-system`.
-2. Copy `.env.example` to `.env`.
-3. Set a long random `DJANGO_SECRET_KEY`, MySQL passwords, allowed host name and trusted HTTPS origin.
-4. Set `LOAD_DEMO_DATA=False` for production.
-5. Run `docker compose up -d --build`.
-6. Check `docker compose ps` and `docker compose logs -f web`.
-7. Browse to `http://server:8000/accounts/login/` for an initial test.
-8. Install IIS URL Rewrite and Application Request Routing, enable proxying, and adapt `deployment/iis-web.config.example`.
-9. Bind the organisation's TLS certificate in IIS and redirect HTTP to HTTPS.
-10. Set `DJANGO_CSRF_TRUSTED_ORIGINS=https://your-hostname` and `DJANGO_SECURE_COOKIES=True`, then restart with `docker compose up -d`.
+1. Push the repository to `ananthcjayan12/asset_management_system`.
+2. In Coolify, create a project and a production environment.
+3. Add a public GitHub application from the repository and select the `main` branch.
+4. Select the Dockerfile build pack, base directory `/`, Dockerfile location `/Dockerfile`, and exposed port `8000`.
+5. Add one persistent volume with destination `/app/data`.
+6. Add the environment variables from `.env.example`.
+7. Set `DJANGO_ALLOWED_HOSTS` to the public hostname.
+8. Set `DJANGO_CSRF_TRUSTED_ORIGINS` to the complete public HTTPS origin.
+9. Set `DJANGO_SECURE_COOKIES=True`, use a long random `DJANGO_SECRET_KEY`, and replace the sample administrator password.
+10. Configure the domain in Coolify and deploy.
+
+No custom Traefik labels, reverse-proxy files, database service, or host port mapping are required. Coolify routes the domain to container port 8000.
+
+The container startup script applies migrations, collects static files, creates the standard groups, and optionally loads demo records. Use `LOAD_DEMO_DATA=True` for the demonstration system.
+
+## Coolify settings
+
+- Build pack: Dockerfile
+- Dockerfile: `/Dockerfile`
+- Base directory: `/`
+- Port: `8000`
+- Health check: `/accounts/login/`
+- Force HTTPS: enabled
+- Automatic deployment: enabled after the first verified deployment
+- Preview deployments: disabled unless specifically needed
 
 ## Initial administration
 
-Open `/admin/` and configure Divisions, Sections, Sub-sections, Locations, Employees, Suppliers, Users and Groups. Stock-return destinations must have `is_stock_location` selected.
+Open `/admin/` and sign in with `DJANGO_SUPERUSER_USERNAME` and `DJANGO_SUPERUSER_PASSWORD`. The password is only reset when the user is first created or `RESET_ADMIN_PASSWORD=True`.
 
-## Roles
-
-The bootstrap command creates System Administrator, Asset Administrator, Stores Officer, Division Officer, Approving Officer, Security Officer, Auditor and Report Viewer groups. Assign each user only the minimum necessary group.
+Set `RESET_ADMIN_PASSWORD=False` after any intentional password reset. Configure Divisions, Sections, Sub-sections, Locations, Employees, Suppliers, Users, and Groups as needed.
 
 ## Backup
 
-Back up both MySQL and the media volume. The provided `deployment/backup.sh` is an example for Linux shells. On Windows, run the equivalent commands from PowerShell or schedule them in Task Scheduler. Keep encrypted off-server copies and periodically test restoration.
+For local Docker Compose deployments, run:
+
+```bash
+./deployment/backup.sh
+```
+
+For Coolify, back up the persistent storage mounted at `/app/data`. Keep encrypted off-server copies and test restoration periodically.
 
 ## Upgrade
 
-1. Take verified backups.
-2. Review release notes and dependency changes.
-3. Build a staging copy: `docker compose build --pull`.
-4. Run tests and a representative workflow.
-5. Deploy with `docker compose up -d --build`.
-6. Review logs and run `docker compose exec web python manage.py check --deploy`.
+1. Back up `/app/data`.
+2. Push the tested commit to `main`.
+3. Let Coolify build and deploy the new image.
+4. Check container health and logs.
+5. Verify login, dashboard, assets, imports, and uploaded attachments.
+
+The database and uploaded media survive image replacement because they are stored in the persistent volume.
 
 ## Troubleshooting
 
-- Database connection errors: check `docker compose ps db`, passwords, and the `MYSQL_HOST=db` setting.
-- CSRF errors behind IIS: verify the public HTTPS origin in `DJANGO_CSRF_TRUSTED_ORIGINS` and forwarded protocol header.
-- Missing static styling: run `docker compose exec web python manage.py collectstatic --noinput` and restart.
-- Permission denied: confirm the user's group and the corresponding Django permissions in `/admin/`.
-- Import errors: open the batch page, inspect row-level validation messages, correct the workbook, and upload a new batch.
-
-## Port binding
-
-The supplied Compose file binds port 8000 to `127.0.0.1` by default. If Docker runs in an Ubuntu Hyper-V VM, set `APP_BIND_ADDRESS` to the VM's private interface and permit access only from the IIS server using the Windows/Linux firewall.
-
-## Restore examples
-
-- Database: `./deployment/restore-example.sh backups/db-YYYYMMDD-HHMMSS.sql.gz`
-- Media: `./deployment/restore-media-example.sh backups/media-YYYYMMDD-HHMMSS.tar.gz`
-
-Both examples require an explicit `RESTORE` confirmation. Restore into staging first, validate record counts and uploaded files, and only then plan a controlled production restore.
+- Lost data after redeployment: confirm that Coolify storage is mounted at exactly `/app/data`.
+- CSRF errors: use the complete `https://` origin in `DJANGO_CSRF_TRUSTED_ORIGINS`.
+- Disallowed host errors: add the hostname, without a scheme, to `DJANGO_ALLOWED_HOSTS`.
+- Missing static styling: inspect startup logs for `collectstatic` errors.
+- Unhealthy deployment: verify `/accounts/login/` returns HTTP 200 on port 8000.
+- Permission errors: the image runs with the same simple root-container model used by RFdocker so Coolify-mounted storage remains writable.

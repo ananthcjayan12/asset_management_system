@@ -4,7 +4,10 @@
 <title>{% block title %}Asset Management System{% endblock %}</title>
 <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
 <link rel="stylesheet" href="{% static 'css/app.css' %}">
+<link rel="stylesheet" href="{% static 'css/datepicker.css' %}">
 <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
+<script src="{% static 'js/app.js' %}" defer></script>
+<script src="{% static 'js/datepicker.js' %}" defer></script>
 </head><body>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark"><div class="container-fluid">
 <a class="navbar-brand" href="{% url 'core:dashboard' %}">Asset Management</a>
@@ -12,6 +15,7 @@
 <div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav me-auto">
 {% if perms.assets.view_asset %}<li class="nav-item"><a class="nav-link" href="{% url 'assets:list' %}">Assets</a></li>{% endif %}
 {% if perms.movements.view_assetmovement %}<li class="nav-item"><a class="nav-link" href="{% url 'movements:list' %}">Movements</a></li>{% endif %}
+{% if perms.assets.view_assetverification %}<li class="nav-item"><a class="nav-link" href="{% url 'assets:verification_list' %}">Verification</a></li>{% endif %}
 {% if perms.gatepasses.view_gatepass %}<li class="nav-item"><a class="nav-link" href="{% url 'gatepasses:list' %}">Gate Passes</a></li>{% endif %}
 {% if perms.disposal.view_disposalrecord %}<li class="nav-item"><a class="nav-link" href="{% url 'disposal:list' %}">Disposal</a></li>{% endif %}
 {% if perms.assets.view_asset %}<li class="nav-item"><a class="nav-link" href="{% url 'reporting:dashboard' %}">Reports</a></li>{% endif %}

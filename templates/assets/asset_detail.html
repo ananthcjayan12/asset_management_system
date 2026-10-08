@@ -1,4 +1,62 @@
-{% extends "base.html" %}{% block content %}<div class="d-flex justify-content-between align-items-start mb-3"><div><h1 class="h3 mb-0">{{ asset.asset_code }}</h1><div class="text-muted">{{ asset.brief_description }}</div></div><div>{% if perms.assets.change_asset %}<a class="btn btn-outline-primary" href="{% url 'assets:update' asset.pk %}">Edit</a>{% endif %}<a class="btn btn-outline-secondary" href="{% url 'assets:qr_image' asset.pk %}">QR PNG</a> <a class="btn btn-outline-secondary" href="{% url 'assets:qr_page' asset.qr_token %}">Open QR page</a></div></div>
-<div class="row g-4"><div class="col-lg-8"><div class="card mb-4"><div class="card-header">Asset details</div><div class="card-body"><dl class="row"><dt class="col-sm-4">Transaction ID</dt><dd class="col-sm-8">{{ asset.transaction_id }}</dd><dt class="col-sm-4">NC</dt><dd class="col-sm-8">{{ asset.nc_no }} {{ asset.nc_date|default:"" }}</dd><dt class="col-sm-4">Specification</dt><dd class="col-sm-8">{{ asset.specification|linebreaksbr|default:"-" }}</dd><dt class="col-sm-4">Make / model</dt><dd class="col-sm-8">{{ asset.make }} {{ asset.model }}</dd><dt class="col-sm-4">Item serial no.</dt><dd class="col-sm-8">{{ asset.item_sl_no|default:"-" }}</dd><dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ asset.get_current_status_display }}</dd><dt class="col-sm-4">Location</dt><dd class="col-sm-8">{{ asset.current_location|default:"-" }}</dd><dt class="col-sm-4">Custodian</dt><dd class="col-sm-8">{{ asset.current_custodian|default:"-" }}</dd><dt class="col-sm-4">Remarks</dt><dd class="col-sm-8">{{ asset.remarks|linebreaksbr|default:"-" }}</dd></dl></div></div>
-<div class="card"><div class="card-header">Movement history</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Date</th><th>Type</th><th>From</th><th>To</th><th>Voucher</th><th>Approved by</th></tr></thead><tbody>{% for m in movements %}<tr><td>{{ m.movement_date }}</td><td>{{ m.get_movement_type_display }}</td><td>{{ m.from_location|default:"-" }}</td><td>{{ m.to_location|default:"-" }}</td><td>{{ m.voucher_number|default:"-" }}</td><td>{{ m.approved_by|default:"-" }}</td></tr>{% empty %}<tr><td colspan="6">No movements.</td></tr>{% endfor %}</tbody></table></div></div></div>
-<div class="col-lg-4"><div class="card mb-4"><div class="card-header">QR code</div><div class="card-body text-center"><img class="img-fluid qr-image" src="{% url 'assets:qr_image' asset.pk %}" alt="QR code for {{ asset.asset_code }}"><p class="small text-muted mb-0">Scan to open the asset webpage.</p></div></div><div class="card"><div class="card-header">Procurement and installation</div><div class="card-body"><p><strong>PO:</strong> {{ asset.procurement.po_no|default:"-" }}</p><p><strong>Supplier:</strong> {{ asset.procurement.supplier|default:"-" }}</p><p><strong>Amount:</strong> {{ asset.procurement.amount|default:"-" }}</p><p><strong>Stock entry:</strong> {{ asset.installation.stock_entry_reference|default:"-" }}</p><p><strong>Installed:</strong> {{ asset.installation.date_of_installation|default:"-" }}</p><p><strong>Warranty months:</strong> {{ asset.installation.warranty_period_months|default:"-" }}</p></div></div></div></div>{% endblock %}
+{% extends "base.html" %}{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div><h1 class="h3 mb-0">{{ asset.display_code }}</h1><div class="text-muted">{{ asset.brief_description }}</div></div>
+  <div class="d-flex flex-wrap gap-1">
+    {% if perms.assets.change_asset %}<a class="btn btn-outline-primary" href="{% url 'assets:update' asset.pk %}">Edit</a>{% endif %}
+    {% if perms.assets.add_asset and not asset.parent_asset %}<a class="btn btn-outline-primary" href="{% url 'assets:create' %}?parent={{ asset.pk }}">Add accessory</a>{% endif %}
+    {% if perms.movements.approve_assetmovement %}<a class="btn btn-outline-primary" href="{% url 'movements:transfer' %}?asset={{ asset.pk }}">Transfer this asset</a><a class="btn btn-outline-primary" href="{% url 'movements:return' %}?asset={{ asset.pk }}">Return this asset</a>{% endif %}
+    <a class="btn btn-outline-secondary" href="{% url 'assets:qr_image' asset.pk %}">QR PNG</a> <a class="btn btn-outline-secondary" href="{% url 'assets:qr_page' asset.qr_token %}">Open QR page</a>
+  </div>
+</div>
+<div class="row g-4"><div class="col-lg-8">
+  <div class="card mb-4"><div class="card-header">Asset details</div><div class="card-body"><dl class="row">
+    <dt class="col-sm-4">SL No.</dt><dd class="col-sm-8">{{ asset.sl_no|default:"-" }}</dd>
+    <dt class="col-sm-4">Transaction ID</dt><dd class="col-sm-8">{{ asset.transaction_id }}</dd>
+    <dt class="col-sm-4">RFID code</dt><dd class="col-sm-8">{{ asset.asset_code|default:"Not yet assigned" }}</dd>
+    <dt class="col-sm-4">Type of inventory</dt><dd class="col-sm-8">{{ asset.inventory_type|default:"-" }}</dd>
+    <dt class="col-sm-4">NC</dt><dd class="col-sm-8">{{ asset.nc_no }} {{ asset.nc_date|date:"d-m-Y" }}</dd>
+    <dt class="col-sm-4">Specification</dt><dd class="col-sm-8">{{ asset.specification|linebreaksbr|default:"-" }}</dd>
+    <dt class="col-sm-4">Make / model</dt><dd class="col-sm-8">{{ asset.make }} {{ asset.model }}</dd>
+    <dt class="col-sm-4">Item serial no.</dt><dd class="col-sm-8">{{ asset.item_sl_no|default:"-" }}</dd>
+    {% if asset.parent_asset %}<dt class="col-sm-4">Main item</dt><dd class="col-sm-8"><a href="{% url 'assets:detail' asset.parent_asset.pk %}">{{ asset.parent_asset }}</a></dd>{% endif %}
+    <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ asset.get_current_status_display }}</dd>
+    <dt class="col-sm-4">Location</dt><dd class="col-sm-8">{{ asset.current_location|default:"-" }}</dd>
+    <dt class="col-sm-4">Division</dt><dd class="col-sm-8">{{ asset.division|default:"-" }}</dd>
+    <dt class="col-sm-4">Custodian</dt><dd class="col-sm-8">{{ asset.current_custodian|default:"-" }}</dd>
+    <dt class="col-sm-4">Remarks</dt><dd class="col-sm-8">{{ asset.remarks|linebreaksbr|default:"-" }}</dd>
+  </dl></div></div>
+  {% if not asset.parent_asset %}
+  <div class="card mb-4"><div class="card-header d-flex justify-content-between align-items-center">Accessories / sub-assets{% if perms.assets.add_asset %}<a class="btn btn-sm btn-outline-primary" href="{% url 'assets:create' %}?parent={{ asset.pk }}">Add accessory</a>{% endif %}</div>
+    <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Transaction ID / RFID</th><th>Description</th><th>Make / model</th><th>Serial no.</th><th>Status</th><th>Location</th></tr></thead><tbody>
+    {% for acc in accessories %}<tr><td><a href="{% url 'assets:detail' acc.pk %}">{{ acc.display_code }}</a></td><td>{{ acc.brief_description }}</td><td>{{ acc.make }} {{ acc.model }}</td><td>{{ acc.item_sl_no|default:"-" }}</td><td>{{ acc.get_current_status_display }}</td><td>{{ acc.current_location|default:"-" }}</td></tr>
+    {% empty %}<tr><td colspan="6">No accessories recorded.</td></tr>{% endfor %}</tbody></table></div></div>
+  {% endif %}
+  <div class="card mb-4"><div class="card-header">Movement history</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Transferred date</th><th>Type</th><th>From</th><th>To</th><th>Changes</th><th>Voucher</th><th>Approved by</th></tr></thead><tbody>
+    {% for m in movements %}<tr><td>{{ m.movement_date|date:"d-m-Y" }}</td><td>{{ m.get_movement_type_display }}{% if m.return_clause %}<br><small>{{ m.return_clause }}</small>{% endif %}</td><td>{{ m.from_location|default:"-" }}</td><td>{{ m.to_location|default:"-" }}</td><td>{% if m.changes %}<ul class="change-list">{% for c in m.changes %}<li>{{ c }}</li>{% endfor %}</ul>{% else %}-{% endif %}</td><td>{{ m.voucher_number|default:"-" }}</td><td>{{ m.approved_by|default:"-" }}</td></tr>
+    {% empty %}<tr><td colspan="7">No movements.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="card-header">Verification history</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Date</th><th>Result</th><th>Verified by</th><th>Remarks</th></tr></thead><tbody>
+    {% for v in verifications %}<tr><td>{{ v.verification_date|date:"d-m-Y" }}</td><td>{{ v.get_result_display }}</td><td>{{ v.verified_by|default:"-" }}</td><td>{{ v.remarks|default:"-" }}</td></tr>
+    {% empty %}<tr><td colspan="4">Not verified yet.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+<div class="col-lg-4">
+  <div class="card mb-4"><div class="card-header">QR code</div><div class="card-body text-center"><img class="img-fluid qr-image" src="{% url 'assets:qr_image' asset.pk %}" alt="QR code for {{ asset.display_code }}"><p class="small text-muted mb-0">Scan to open the asset webpage.</p></div></div>
+  <div class="card"><div class="card-header">Procurement and installation</div><div class="card-body">
+    {% with p=asset.procurement %}
+    <p><strong>PO:</strong> {{ p.po_no|default:"-" }} {{ p.po_date|date:"d-m-Y" }}</p>
+    <p><strong>Supplier:</strong> {{ p.supplier|default:"-" }}</p>
+    <p><strong>Amount / Unit rate:</strong> {% if p.amount is not None %}{{ p.currency }} {{ p.amount }}{% else %}-{% endif %}</p>
+    <p><strong>Bill:</strong> {{ p.bill_no|default:"-" }} {{ p.bill_date|date:"d-m-Y" }}{% if p.bill_value is not None %} &middot; {{ p.currency }} {{ p.bill_value }}{% endif %}</p>
+    <p><strong>DRR:</strong> {{ p.drr_no|default:"-" }} {{ p.drr_date|date:"d-m-Y" }}</p>
+    <p><strong>GRIN:</strong> {{ p.grin_no|default:"-" }} {{ p.grin_date|date:"d-m-Y" }}</p>
+    <p><strong>Budget:</strong> {{ p.budget|default:"-" }}{% if p.budget_classification %} / {{ p.budget_classification }}{% endif %}</p>
+    <p><strong>Project code:</strong> {{ p.project_code|default:"-" }}</p>
+    {% endwith %}
+    {% with i=asset.installation %}
+    <p><strong>Stock entry:</strong> {{ i.stock_entry_reference|default:"-" }}</p>
+    <p><strong>Installed:</strong> {{ i.date_of_installation|date:"d-m-Y"|default:"-" }}</p>
+    <p><strong>Warranty months:</strong> {{ i.warranty_period_months|default:"-" }}</p>
+    <p><strong>Status of asset:</strong> {{ i.status_of_asset|default:"-" }}</p>
+    <p class="mb-0"><strong>Log book maintained:</strong> {% if i.log_book_maintained is None %}-{% else %}{{ i.log_book_maintained|yesno:"Yes,No" }}{% endif %}</p>
+    {% endwith %}
+  </div></div>
+</div></div>{% endblock %}

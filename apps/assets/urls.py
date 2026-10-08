@@ -8,4 +8,7 @@ urlpatterns = [
     path("<int:pk>/edit/", views.asset_update, name="update"),
     path("<int:pk>/qr.png", views.qr_image, name="qr_image"),
     path("q/<uuid:token>/", views.qr_page, name="qr_page"),
+    path("summary/", views.asset_summary, name="summary"),
+    path("verification/", views.verification_list, name="verification_list"),
+    path("verification/record/", views.verification_record, name="verification_record"),
 ]

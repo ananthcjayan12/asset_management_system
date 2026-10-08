@@ -6,11 +6,56 @@ from apps.core.services import audit
 from apps.movements.models import AssetMovement
 from .models import GatePass
 
+def user_division(user):
+    return getattr(getattr(user, "employee", None), "division", None)
+
+def check_division_admin(gatepass, user):
+    """A division admin may only act on gate passes of their own division."""
+    if user.is_superuser or not gatepass.division_id:
+        return
+    division = user_division(user)
+    if division is None or division.pk != gatepass.division_id:
+        raise ValidationError("You can only act on gate passes of your own division.")
+
+@transaction.atomic
+def division_approve_gatepass(*, gatepass, user):
+    gatepass = GatePass.objects.select_for_update().get(pk=gatepass.pk)
+    if gatepass.status != GatePass.Status.REQUESTED:
+        raise ValidationError("Only requested gate passes can be approved by the division.")
+    check_division_admin(gatepass, user)
+    if not gatepass.items.exists():
+        raise ValidationError("A gate pass must contain at least one asset.")
+    gatepass.status = GatePass.Status.DIVISION_APPROVED
+    gatepass.division_approved_by = user
+    gatepass.save(update_fields=["status", "division_approved_by", "updated_at"])
+    audit(actor=user, action="GATEPASS_DIVISION_APPROVE", obj=gatepass, description=f"Division approved {gatepass.gatepass_no}")
+    return gatepass
+
+@transaction.atomic
+def reject_gatepass(*, gatepass, user, reason=""):
+    gatepass = GatePass.objects.select_for_update().get(pk=gatepass.pk)
+    if gatepass.status == GatePass.Status.REQUESTED:
+        if not user.has_perm("gatepasses.division_approve_gatepass"):
+            raise ValidationError("Only the division admin can reject a newly requested gate pass.")
+        check_division_admin(gatepass, user)
+    elif gatepass.status == GatePass.Status.DIVISION_APPROVED:
+        if not user.has_perm("gatepasses.approve_gatepass"):
+            raise ValidationError("Only Stores can reject a division-approved gate pass.")
+    else:
+        raise ValidationError("Only gate passes awaiting approval can be rejected.")
+    gatepass.status = GatePass.Status.REJECTED
+    gatepass.rejected_by = user
+    gatepass.rejected_at = timezone.now()
+    gatepass.rejection_reason = reason.strip()
+    gatepass.save(update_fields=["status", "rejected_by", "rejected_at", "rejection_reason", "updated_at"])
+    audit(actor=user, action="GATEPASS_REJECT", obj=gatepass, description=f"Rejected {gatepass.gatepass_no}: {gatepass.rejection_reason or 'no reason given'}")
+    return gatepass
+
 @transaction.atomic
 def approve_gatepass(*, gatepass, user):
     gatepass = GatePass.objects.select_for_update().get(pk=gatepass.pk)
-    if gatepass.status != GatePass.Status.REQUESTED:
-        raise ValidationError("Only requested gate passes can be approved.")
+    if gatepass.status != GatePass.Status.DIVISION_APPROVED:
+        raise ValidationError("The division admin must approve the gate pass before Stores approval.")
     if not gatepass.items.exists():
         raise ValidationError("A gate pass must contain at least one asset.")
     gatepass.status = GatePass.Status.STORES_APPROVED

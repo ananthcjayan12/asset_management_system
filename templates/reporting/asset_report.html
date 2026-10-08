@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block content %}
+<div class="d-flex justify-content-between mb-3 flex-wrap gap-2"><h1 class="h3">Asset reports</h1><a class="btn btn-primary" href="{% url 'reporting:assets_csv' %}?{{ query }}">Download this report (CSV)</a></div>
+<div class="card mb-3"><div class="card-body">
+  <form method="get" class="row g-2 align-items-end report-filters">
+    <div class="col-md-3"><label class="form-label" for="id_group_by">Report</label>{{ form.group_by }}</div>
+    <div class="col-md-3"><label class="form-label" for="id_inventory_type">Type of inventory</label>{{ form.inventory_type }}</div>
+    <div class="col-md-2"><label class="form-label" for="id_date_basis">Date based on</label>{{ form.date_basis }}</div>
+    <div class="col-md-2"><label class="form-label" for="id_date_from">From</label><div>{{ form.date_from }}</div></div>
+    <div class="col-md-2"><label class="form-label" for="id_date_to">To</label><div>{{ form.date_to }}</div></div>
+    <div class="col-md-3"><label class="form-label" for="id_employee">Employee name</label>{{ form.employee }}</div>
+    <div class="col-md-3"><label class="form-label" for="id_division">Division</label>{{ form.division }}</div>
+    <div class="col-md-2"><label class="form-label" for="id_centre">Centre</label>{{ form.centre }}</div>
+    <div class="col-md-2"><label class="form-label" for="id_building">Building</label>{{ form.building }}</div>
+    <div class="col-md-2"><label class="form-label" for="id_status">Status</label>{{ form.status }}</div>
+    <div class="col-md-4"><label class="form-label" for="id_location">Location / room</label>{{ form.location }}</div>
+    <div class="col-md-2"><button class="btn btn-primary">Generate</button> <a class="btn btn-link" href="{% url 'reporting:asset_report' %}">Reset</a></div>
+    {% if form.errors %}<div class="col-12 errorlist">{{ form.errors }}</div>{% endif %}
+  </form>
+</div></div>
+{% if groups %}
+<div class="card mb-3"><div class="card-header">{{ heading }}-wise summary</div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>{{ heading }}</th><th class="text-end">Assets</th></tr></thead><tbody>{% for g in groups %}<tr><td>{{ g.label }}</td><td class="text-end">{{ g.count }}</td></tr>{% endfor %}<tr class="fw-semibold"><td>Total</td><td class="text-end">{{ total }}</td></tr></tbody></table></div></div>
+{% endif %}
+<div class="card"><div class="card-header">{{ total }} matching asset{{ total|pluralize }}</div><div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead><tr><th>SL No.</th><th>Transaction ID / RFID</th><th>Type</th><th>Description</th><th>Status</th><th>Employee</th><th>Division</th><th>Location / room</th><th>Registered</th></tr></thead><tbody>
+{% for a in page %}<tr><td>{{ a.sl_no|default:"-" }}</td><td><a href="{% url 'assets:detail' a.pk %}">{{ a.display_code }}</a></td><td>{{ a.inventory_type|default:"-" }}</td><td>{{ a.brief_description }}</td><td>{{ a.get_current_status_display }}</td><td>{{ a.current_custodian.name|default:"-" }}</td><td>{{ a.division.name|default:"-" }}</td><td>{{ a.current_location|default:"-" }}</td><td>{{ a.created_at|date:"d-m-Y" }}</td></tr>
+{% empty %}<tr><td colspan="9">No assets match these filters.</td></tr>{% endfor %}</tbody></table></div></div>
+{% if page.paginator.num_pages > 1 %}<nav class="mt-3"><ul class="pagination">{% if page.has_previous %}<li class="page-item"><a class="page-link" href="?{{ query }}&page={{ page.previous_page_number }}">Previous</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span></li>{% if page.has_next %}<li class="page-item"><a class="page-link" href="?{{ query }}&page={{ page.next_page_number }}">Next</a></li>{% endif %}</ul></nav>{% endif %}
+{% endblock %}

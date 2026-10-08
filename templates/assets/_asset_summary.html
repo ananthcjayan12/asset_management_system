@@ -1,0 +1,20 @@
+{% if asset %}
+<div class="card border-primary-subtle">
+  <div class="card-header">Asset details &mdash; {{ asset.display_code }}</div>
+  <div class="card-body small">
+    <dl class="row mb-0">
+      <dt class="col-5">Description</dt><dd class="col-7">{{ asset.brief_description }}</dd>
+      <dt class="col-5">SL No. / Transaction ID</dt><dd class="col-7">{{ asset.sl_no|default:"-" }} / {{ asset.transaction_id }}</dd>
+      <dt class="col-5">RFID code</dt><dd class="col-7">{{ asset.asset_code|default:"-" }}</dd>
+      <dt class="col-5">Type of inventory</dt><dd class="col-7">{{ asset.inventory_type|default:"-" }}</dd>
+      <dt class="col-5">Make / model</dt><dd class="col-7">{{ asset.make }} {{ asset.model }}</dd>
+      <dt class="col-5">Item serial no.</dt><dd class="col-7">{{ asset.item_sl_no|default:"-" }}</dd>
+      <dt class="col-5">Status</dt><dd class="col-7">{{ asset.get_current_status_display }}</dd>
+      <dt class="col-5">Current location</dt><dd class="col-7">{{ asset.current_location|default:"-" }}</dd>
+      <dt class="col-5">Division</dt><dd class="col-7">{{ asset.division|default:"-" }}</dd>
+      <dt class="col-5">Custodian</dt><dd class="col-7">{{ asset.current_custodian|default:"-" }}</dd>
+      <dt class="col-5">Accessories</dt><dd class="col-7">{% for acc in accessories %}{{ acc.display_code }} - {{ acc.brief_description }}{% if not forloop.last %}<br>{% endif %}{% empty %}None{% endfor %}</dd>
+    </dl>
+  </div>
+</div>
+{% else %}<div class="text-muted small">Choose an asset to see its details here.</div>{% endif %}

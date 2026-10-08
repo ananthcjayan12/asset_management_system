@@ -7,14 +7,16 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from apps.assets.models import Asset, Installation, Procurement
-from apps.core.models import Division, Employee, Location, Section, SubSection, Supplier
+from apps.core.models import Building, Centre, Division, Employee, Location, Place, Room, Section, SubSection, Supplier
 from apps.core.services import audit
 from apps.disposal.models import DisposalRecord
 from apps.movements.models import AssetMovement
 from .models import ImportBatch, ImportRow
 
 ALIASES = {
-    "ASSET_CODE": ["ASSET_CODE", "ASSET CODE"],
+    "ASSET_CODE": ["ASSET_CODE", "ASSET CODE", "RFID_CODE", "RFID CODE"],
+    "INVENTORY_TYPE": ["INVENTORY_TYPE", "TYPE OF INVENTORY", "INVENTORY TYPE", "PIR/DIR", "PIR/DIR/IIR"],
+    "MAIN_ITEM": ["MAIN_ITEM", "MAIN ITEM", "PARENT_ASSET", "PARENT ASSET", "MAIN ITEM TRANSACTION ID"],
     "SL_NO": ["SL_NO", "SL NO", "S.NO", "S NO"],
     "TRANSACTION_ID": ["TRANSACTION_ID", "TRANSACTION ID"],
     "NC_NO": ["NC_NO", "NC NO"],
@@ -25,17 +27,25 @@ ALIASES = {
     "MODEL": ["MODEL"],
     "ITEM_SL_NO": ["ITEM_SL_NO", "ITEM SL NO", "SERIAL NUMBER", "ITEM SERIAL NUMBER"],
     "QTY": ["QTY", "QUANTITY"],
-    "AMOUNT": ["AMOUNT"],
+    "AMOUNT": ["AMOUNT", "UNIT RATE", "AMOUNT/UNIT RATE", "AMOUNT / UNIT RATE"],
+    "CURRENCY": ["CURRENCY", "BILL CURRENCY"],
     "PO_NO": ["PO_NO", "PO NO"],
     "PO_DATE": ["PO_DATE", "PO DATE"],
     "SUPPLIER_NAME": ["SUPPLIER_NAME", "SUPPLIER NAME"],
     "BILL_NO": ["BILL_NO", "BILL NO"],
     "BILL_DATE": ["BILL_DATE", "BILL DATE"],
     "BILL_VALUE": ["BILL_VALUE", "BILL VALUE"],
+    "DRR_NO": ["DRR_NO", "DRR NO", "DRR NO."],
+    "DRR_DATE": ["DRR_DATE", "DRR DATE"],
+    "GRIN_NO": ["GRIN_NO", "GRIN NO", "GRIN NO."],
+    "GRIN_DATE": ["GRIN_DATE", "GRIN DATE"],
     "STOCK_ENTRY_REFERENCE": ["STOCK_ENTRY_REFERENCE", "STOCK ENTRY REFERENCE"],
     "DATE_OF_INSTALLATION": ["DATE OF INSTALLATION", "DATE_OF_INSTALLATION"],
     "WARRANTY_PERIOD": ["WARRANTY PERIOD", "WARRANTY_PERIOD"],
     "STATUS_OF_ASSET": ["STATUS OF ASSET", "STATUS_OF_ASSET"],
+    "LOG_BOOK_MAINTAINED": ["LOG_BOOK_MAINTAINED", "LOG BOOK MAINTAINED", "LOG BOOK"],
+    "CENTRE": ["CENTRE", "CENTER"],
+    "BUILDING": ["BUILDING", "BUILDING NAME", "BUILDING_NAME"],
     "ROOM_NO": ["ROOM_NO", "ROOM NO"],
     "ROOM_IN_CHARGE_NAME": ["ROOM_IN_CHARGE_NAME", "ROOM IN CHARGE NAME"],
     "EMP_ID": ["EMP_ID", "EMP ID"],
@@ -78,7 +88,7 @@ ALIASES = {
 }
 
 DATE_FIELDS = {
-    "NC_DATE", "PO_DATE", "BILL_DATE", "DATE_OF_INSTALLATION",
+    "NC_DATE", "PO_DATE", "BILL_DATE", "DATE_OF_INSTALLATION", "DRR_DATE", "GRIN_DATE",
     "TRANSFER_VOUCHER_DATE", "RETURN_VOUCHER_DATE", "WRITE_OFF_OM_DATE", "PASSOUT_DATE",
 }
 DECIMAL_FIELDS = {
@@ -123,6 +133,11 @@ def parse_date(value):
             return datetime.strptime(str(value).strip(), fmt).date()
         except ValueError:
             pass
+    try:
+        # Excel date cells are stored in the preview as ISO datetimes (2026-07-01T00:00:00).
+        return datetime.fromisoformat(str(value).strip()).date()
+    except ValueError:
+        pass
     raise ValueError(f"Invalid date: {value}")
 
 
@@ -145,6 +160,8 @@ def parse_status(value):
         "IN_STOCK": Asset.Status.IN_STOCK,
         "STOCK": Asset.Status.IN_STOCK,
         "ASSIGNED": Asset.Status.ASSIGNED,
+        "ISSUED": Asset.Status.ASSIGNED,
+        "RETURN_PENDING": Asset.Status.RETURN_PENDING,
         "WORKING": Asset.Status.ASSIGNED,
         "OUTSIDE": Asset.Status.OUTSIDE,
         "UNDER_DISPOSAL": Asset.Status.UNDER_DISPOSAL,
@@ -155,10 +172,35 @@ def parse_status(value):
     return mapping.get(text, Asset.Status.IN_STOCK)
 
 
-def validate_data(data, row_number):
+def parse_optional_bool(value):
+    text = str(value or "").strip().lower()
+    if text in {"yes", "y", "true", "1"}:
+        return True
+    if text in {"no", "n", "false", "0"}:
+        return False
+    return None
+
+
+def parse_working_status(value):
+    text = " ".join(str(value or "").strip().lower().replace("_", " ").split())
+    if text in {"working", "in working condition"}:
+        return Installation.WorkingStatus.WORKING
+    if text in {"not working", "non working", "non-working", "notworking"}:
+        return Installation.WorkingStatus.NOT_WORKING
+    return ""
+
+
+def find_asset(reference):
+    reference = str(reference or "").strip()
+    if not reference:
+        return None
+    return Asset.objects.filter(transaction_id=reference).first() or Asset.objects.filter(asset_code=reference).first()
+
+
+def validate_data(data, row_number, seen=None):
+    """Validate one row. ``seen`` holds codes/transaction IDs of earlier rows so accessories can refer to them."""
     errors = []
-    if not data.get("TRANSACTION_ID"):
-        errors.append("TRANSACTION_ID is required")
+    seen = set() if seen is None else seen
     if not data.get("BRIEF_DESCRIPTION"):
         errors.append("BRIEF_DESCRIPTION is required")
     for field in DATE_FIELDS:
@@ -173,12 +215,22 @@ def validate_data(data, row_number):
                 parse_decimal(data[field])
             except ValueError as exc:
                 errors.append(f"{field}: {exc}")
+    inventory_type = str(data.get("INVENTORY_TYPE") or "").strip().upper()
+    if inventory_type and inventory_type not in Asset.InventoryType.values:
+        errors.append("INVENTORY_TYPE must be PIR, DIR or IIR")
+    currency = str(data.get("CURRENCY") or "").strip().upper()
+    if currency and currency not in Procurement.Currency.values:
+        errors.append("CURRENCY must be INR, USD, EUR or JPY")
     tx = str(data.get("TRANSACTION_ID") or "").strip()
-    if tx and Asset.objects.filter(transaction_id=tx).exists():
+    if tx and (tx in seen or Asset.objects.filter(transaction_id=tx).exists()):
         errors.append("TRANSACTION_ID already exists")
     code = str(data.get("ASSET_CODE") or "").strip()
-    if code and Asset.objects.filter(asset_code=code).exists():
-        errors.append("ASSET_CODE already exists")
+    if code and (code in seen or Asset.objects.filter(asset_code=code).exists()):
+        errors.append("RFID/ASSET_CODE already exists")
+    main_item = str(data.get("MAIN_ITEM") or "").strip()
+    if main_item and main_item not in seen and find_asset(main_item) is None:
+        errors.append("MAIN_ITEM must be the transaction ID or RFID code of an existing asset or an earlier row")
+    seen.update(value for value in (tx, code) if value)
     return errors
 
 
@@ -192,12 +244,13 @@ def validate_batch(batch):
         headers = []
     batch.rows.all().delete()
     total = valid = invalid = 0
+    seen = set()
     for excel_row, values in enumerate(rows, start=2):
         if not any(value not in (None, "") for value in values):
             continue
         total += 1
         data = normalize_row(dict(zip(headers, values)))
-        errors = validate_data(data, excel_row)
+        errors = validate_data(data, excel_row, seen)
         ImportRow.objects.create(
             batch=batch,
             row_number=excel_row,
@@ -279,22 +332,34 @@ def confirm_batch(batch, user):
         location = None
         location_name = str(data.get("MAIN_LOCATION") or "").strip()
         room_no = str(data.get("ROOM_NO") or "").strip()
+        building = room = None
+        building_name = str(data.get("BUILDING") or "").strip()
+        if building_name:
+            centre_name = str(data.get("CENTRE") or "").strip()
+            centre = Centre.objects.get_or_create(name=centre_name)[0] if centre_name else None
+            building = Building.objects.get_or_create(centre=centre, name=building_name)[0]
+            if room_no:
+                room = Room.objects.get_or_create(building=building, room_no=room_no)[0]
         if location_name or room_no:
+            place = Place.objects.get_or_create(name=location_name or "Unspecified location")[0]
             location, _ = Location.objects.get_or_create(
-                name=location_name or "Unspecified location",
+                name=place.name,
+                building=building,
                 room_no=room_no,
-                defaults={"division": division, "section": section, "sub_section": subsection},
+                defaults={"place": place, "room": room, "division": division, "section": section, "sub_section": subsection},
             )
         custodian = get_employee(data.get("EMP_ID"), data.get("EMP_NAME"), division, section)
         supplier = None
         if data.get("SUPPLIER_NAME"):
             supplier, _ = Supplier.objects.get_or_create(name=str(data["SUPPLIER_NAME"]).strip())
 
-        code = str(data.get("ASSET_CODE") or f"AST-{batch.pk:04d}-{row.row_number:05d}").strip()
+        # SL No. and (when absent) the transaction ID are generated automatically.
         asset = Asset.objects.create(
-            asset_code=code,
-            sl_no=int(float(data["SL_NO"])) if data.get("SL_NO") not in (None, "") else None,
-            transaction_id=str(data["TRANSACTION_ID"]).strip(),
+            asset_code=str(data.get("ASSET_CODE") or "").strip() or None,
+            inventory_type=str(data.get("INVENTORY_TYPE") or "").strip().upper(),
+            parent_asset=find_asset(data.get("MAIN_ITEM")),
+            division=division,
+            transaction_id=str(data.get("TRANSACTION_ID") or "").strip(),
             nc_no=str(data.get("NC_NO") or "").strip(),
             nc_date=parse_date(data.get("NC_DATE")),
             brief_description=str(data["BRIEF_DESCRIPTION"]).strip(),
@@ -312,6 +377,7 @@ def confirm_batch(batch, user):
         Procurement.objects.create(
             asset=asset,
             qty=int(float(data.get("QTY") or 1)),
+            currency=str(data.get("CURRENCY") or "").strip().upper() or Procurement.Currency.INR,
             amount=parse_decimal(data.get("AMOUNT")),
             po_no=str(data.get("PO_NO") or ""),
             po_date=parse_date(data.get("PO_DATE")),
@@ -319,6 +385,10 @@ def confirm_batch(batch, user):
             bill_no=str(data.get("BILL_NO") or ""),
             bill_date=parse_date(data.get("BILL_DATE")),
             bill_value=parse_decimal(data.get("BILL_VALUE")),
+            drr_no=str(data.get("DRR_NO") or ""),
+            drr_date=parse_date(data.get("DRR_DATE")),
+            grin_no=str(data.get("GRIN_NO") or ""),
+            grin_date=parse_date(data.get("GRIN_DATE")),
         )
         warranty = data.get("WARRANTY_PERIOD")
         try:
@@ -330,7 +400,8 @@ def confirm_batch(batch, user):
             stock_entry_reference=str(data.get("STOCK_ENTRY_REFERENCE") or ""),
             date_of_installation=parse_date(data.get("DATE_OF_INSTALLATION")),
             warranty_period_months=warranty,
-            status_of_asset=str(data.get("STATUS_OF_ASSET") or ""),
+            status_of_asset=parse_working_status(data.get("STATUS_OF_ASSET")),
+            log_book_maintained=parse_optional_bool(data.get("LOG_BOOK_MAINTAINED")),
         )
 
         if parse_bool(data.get("TRANSFER")):

@@ -25,7 +25,7 @@ The visible run is presentation-paced:
 - the explanation remains visible for 1.8 seconds before the click;
 - every browser action has a 650 ms slow-motion delay;
 - every numbered checkpoint remains on screen for 5 seconds;
-- the completed run creates a detailed PDF with all 18 explanations and screenshots.
+- the completed run creates a detailed PDF with all 24 explanations and screenshots.
 
 Increase the timing for a slower presentation:
 

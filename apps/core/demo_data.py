@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group, Permission
+from django.contrib.auth.models import Group
 from django.db import transaction
 
 from apps.assets.models import Asset, Installation, Procurement
 from apps.core.models import AuditEvent, Division, Employee, Location, Section, Supplier
+from apps.core.roles import ensure_groups
 from apps.disposal.models import DisposalRecord
 from apps.gatepasses.models import GatePass
 from apps.imports_app.models import ImportBatch
@@ -25,53 +26,12 @@ ADMIN_PASSWORD = "PlaywrightAdmin123!"
 VIEWER_USERNAME = "pw_demo_viewer"
 VIEWER_PASSWORD = "PlaywrightViewer123!"
 
-GROUP_PERMISSIONS = {
-    "System Administrator": ["add", "change", "delete", "view"],
-    "Asset Administrator": [
-        "add_asset", "change_asset", "view_asset", "add_procurement",
-        "change_procurement", "view_procurement", "add_installation",
-        "change_installation", "view_installation", "approve_assetmovement",
-        "view_assetmovement", "add_disposalrecord", "change_disposalrecord",
-        "view_disposalrecord", "add_importbatch", "change_importbatch",
-        "view_importbatch",
-    ],
-    "Stores Officer": [
-        "view_asset", "change_asset", "approve_assetmovement",
-        "view_assetmovement", "approve_gatepass", "view_gatepass",
-        "change_gatepass",
-    ],
-    "Division Officer": ["view_asset", "add_gatepass", "view_gatepass", "view_assetmovement"],
-    "Approving Officer": [
-        "view_asset", "approve_assetmovement", "approve_disposalrecord",
-        "change_disposalrecord", "view_disposalrecord",
-    ],
-    "Security Officer": [
-        "view_asset", "scan_asset", "view_gatepass",
-        "security_scan_gatepass", "change_gatepass",
-    ],
-    "Auditor": [
-        "view_asset", "view_procurement", "view_installation",
-        "view_assetmovement", "view_gatepass", "view_disposalrecord",
-        "view_auditevent",
-    ],
-    "Report Viewer": ["view_asset", "view_gatepass", "view_assetmovement", "view_disposalrecord"],
-}
-
-
-def ensure_groups() -> None:
-    for name, codenames in GROUP_PERMISSIONS.items():
-        group, _ = Group.objects.get_or_create(name=name)
-        if name == "System Administrator":
-            group.permissions.set(Permission.objects.all())
-        else:
-            group.permissions.set(Permission.objects.filter(codename__in=codenames))
-
-
 def _create_asset(*, code: str, tx: str, description: str, location: Location, custodian: Employee, supplier: Supplier) -> Asset:
     asset, _ = Asset.objects.update_or_create(
         asset_code=code,
         defaults={
             "transaction_id": tx,
+            "inventory_type": Asset.InventoryType.PIR,
             "brief_description": description,
             "specification": "Playwright temporary demonstration asset",
             "make": "Automation Make",

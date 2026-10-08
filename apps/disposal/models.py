@@ -32,5 +32,8 @@ class DisposalRecord(TimeStampedModel):
     remarks = models.TextField(blank=True)
     class Meta:
         ordering = ["-created_at"]
-        permissions = [("approve_disposalrecord", "Can approve disposal and write-off")]
-    def __str__(self): return f"Disposal {self.asset.asset_code}"
+        permissions = [
+            ("approve_disposalrecord", "Can approve disposal and write-off"),
+            ("classify_lot", "Can classify returned items into disposal lots (Stores)"),
+        ]
+    def __str__(self): return f"Disposal {self.asset.display_code}"

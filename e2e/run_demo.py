@@ -56,7 +56,7 @@ STEP_DETAILS: dict[str, list[str]] = {
     ],
     "Asset register search and status filtering": [
         "Open Assets from the main navigation.",
-        "Search by make and apply the Assigned status filter.",
+        "Search by make and apply the Issued status filter.",
         "Confirm that the baseline demonstration asset remains visible.",
     ],
     "Authenticated QR webpage and QR image endpoint": [
@@ -70,23 +70,28 @@ STEP_DETAILS: dict[str, list[str]] = {
         "The update is written to the application's audit activity.",
     ],
     "Register a complete asset with procurement and installation": [
-        "Create a unique asset with status, location and custodian details.",
-        "Add procurement data including supplier, PO, bill and value.",
-        "Add stock-entry, installation and warranty information, then save.",
+        "Create an asset with an optional RFID code, PIR/DIR/IIR type, status, location and custodian.",
+        "Add procurement data including currency, unit rate, PO, bill, DRR and GRIN details.",
+        "Add stock-entry, installation, working status and log book details; SL No. and Transaction ID are generated on save.",
+    ],
+    "Accessory registered as a sub-part of the main item": [
+        "Use Add accessory on the main item to register a monitor with its own serial number.",
+        "The form is pre-filled from the main item (type, location, custodian).",
+        "The accessory is listed under the main item's Accessories section.",
     ],
     "Transfer workflow and movement history": [
-        "Open Movements and choose Transfer.",
-        "Move the UI-created asset from the demo office to the demo lab and assign a recipient.",
-        "Verify the updated asset details and transfer voucher in movement history.",
+        "Open Movements and choose Transfer; search for the asset and review its details panel.",
+        "Move the asset and its accessory to the demo lab, assign a recipient and change PIR to DIR.",
+        "Verify the transferred date, the recorded changes and the accessory's new location.",
     ],
     "Return-to-stock workflow and second movement record": [
         "Open Return to stock for the transferred asset.",
-        "Select Central Stores, record the returning employee and reference number.",
+        "Record the returned stock location, return-from name, voucher and the Surplus return clause.",
         "Verify In stock status and the second movement-history entry.",
     ],
     "Temporary gate pass: request, Stores approval, outward and inward": [
-        "Create a temporary gate pass for the UI-created asset.",
-        "Demonstrate the controlled sequence: request, Stores approval and security outward.",
+        "Create a temporary gate pass for the UI-created asset using the asset search box.",
+        "Demonstrate the controlled sequence: request, division approval, Stores approval and security outward.",
         "Mark the asset inward and confirm the pass closes and the asset returns to stock.",
     ],
     "Overdue temporary gate pass left outward for reporting": [
@@ -99,8 +104,18 @@ STEP_DETAILS: dict[str, list[str]] = {
         "Mark the asset outward.",
         "Confirm there is no inward button and the asset remains outside the premises.",
     ],
+    "Gate pass rejected with a reason": [
+        "Create another gate-pass request.",
+        "Reject it at the division-approval stage with a reason.",
+        "The pass shows Rejected with who rejected it and why; Stores can also reject after division approval.",
+    ],
+    "Stores returns tab with return clause": [
+        "Open Disposal and switch to the Stores returns tab.",
+        "Returned items are listed with their Surplus / Obsolete / Unserviceable clause.",
+        "Only Stores can classify returned items into disposal lots.",
+    ],
     "Disposal proposal, approval and auction final outcome": [
-        "Create a disposal proposal for the prepared disposal asset.",
+        "Create and save a disposal record for the prepared disposal asset.",
         "Approve the proposal using the authorized account.",
         "Record auction details and confirm the asset's final Disposed status.",
     ],
@@ -114,10 +129,25 @@ STEP_DETAILS: dict[str, list[str]] = {
         "Search for one of the newly imported asset codes.",
         "Confirm that the imported record is available through the UI.",
     ],
+    "Physical verification of assets": [
+        "Open Verification and choose Record verification.",
+        "List the assets expected at the demo office and mark each Available or Not available.",
+        "Review the verification report with date-range and result filters.",
+    ],
     "Reports, overdue pass visibility and CSV export": [
-        "Review acquisition value, assets by status and top locations.",
+        "Review acquisition value per currency, assets by status, PIR/DIR/IIR and top locations.",
         "Confirm the overdue temporary gate pass is listed.",
         "Download the asset-register CSV and verify key demonstration assets are included.",
+    ],
+    "Date-wise PIR/DIR report grouped by division": [
+        "Open Asset reports and choose a date range, the PIR/DIR type and a Division-wise report.",
+        "Reports are also available employee-wise, room-wise, location-wise, building-wise and centre-wise.",
+        "The same filters apply to the CSV download.",
+    ],
+    "Employee master with year-wise calendar": [
+        "Open Add employee in Administration.",
+        "Date of joining and date of retirement are recorded for each employee.",
+        "The calendar sits beside the date and offers month and year drop-downs for quick year-wise navigation.",
     ],
     "Administration master data: divisions, locations, employees and suppliers": [
         "Open Django Administration with the administrator account.",
@@ -643,14 +673,17 @@ def create_gatepass(
     page.locator("#id_destination").fill(destination)
     if expected_return:
         page.locator("#id_expected_return_date").fill(expected_return.isoformat())
+    page.locator("#asset-search").fill(asset_code)
     select_asset_checkbox(page, tour, asset_code)
     page.locator("#id_remarks").fill("PWDEMO automated feature tour")
-    narrated_click(page, tour, page.get_by_role("button", name="Submit request"), "Submit the gate pass for Stores approval.")
+    narrated_click(page, tour, page.get_by_role("button", name="Submit request"), "Submit the gate pass for division and Stores approval.")
     expect(page.locator(".text-muted")).to_contain_text("Requested")
 
 
 def approve_and_mark_outward(page: Page, tour: Tour) -> None:
-    narrated_click(page, tour, page.get_by_role("button", name="Stores approve"), "Approve the requested gate pass as Stores.")
+    narrated_click(page, tour, page.get_by_role("button", name="Division approve"), "Approve the request as the division admin.")
+    expect(page.locator(".alert")).to_contain_text("approved by the division")
+    narrated_click(page, tour, page.get_by_role("button", name="Stores approve"), "Approve the division-approved gate pass as Stores.")
     expect(page.locator(".alert")).to_contain_text("approved by Stores")
     narrated_click(page, tour, page.get_by_role("button", name="Mark outward"), "Record the security outward movement.")
     expect(page.locator(".alert")).to_contain_text("marked outward")
@@ -659,6 +692,7 @@ def approve_and_mark_outward(page: Page, tour: Tour) -> None:
 def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: Tour, import_path: Path, run_dir: Path) -> None:
     today = date.today()
     ui_asset_code = "PWDEMO-UI-001"
+    ui_accessory_code = "PWDEMO-UI-ACC-001"
 
     login(page, base_url, ADMIN_USERNAME, ADMIN_PASSWORD, tour)
     tour.checkpoint(
@@ -668,7 +702,7 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     )
 
     click_nav(page, tour, "Assets")
-    tour.action(page, "Search the asset register by make and filter it to Assigned assets.")
+    tour.action(page, "Search the asset register by make and filter it to Issued assets.")
     search = page.locator('input[name="q"]')
     search.fill("Automation Make")
     expect(page.get_by_role("link", name="PWDEMO-BASE-001")).to_be_visible()
@@ -697,9 +731,9 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
 
     click_nav(page, tour, "Assets")
     narrated_click(page, tour, page.get_by_role("link", name="Register asset"), "Open the complete asset-registration form.")
-    tour.action(page, "Enter the asset identity, specification, status, location and custodian.")
+    tour.action(page, "Enter the optional RFID code, type of inventory, specification, status, location and custodian.")
     page.locator("#id_asset_code").fill(ui_asset_code)
-    page.locator("#id_transaction_id").fill("PWDEMO-TX-UI-001")
+    page.locator("#id_inventory_type").select_option("PIR")
     page.locator("#id_brief_description").fill("Playwright UI registered laptop")
     page.locator("#id_specification").fill("16 GB RAM, 512 GB SSD; temporary demo data")
     page.locator("#id_make").fill("Automation Make")
@@ -713,8 +747,9 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     page.locator("#id_remarks").fill("PWDEMO created through the asset registration UI")
 
     narrated_click(page, tour, page.get_by_role("button", name="Procurement", exact=True), "Expand the procurement section.")
-    tour.action(page, "Enter quantity, value, purchase order, supplier and bill information.")
+    tour.action(page, "Enter quantity, currency, unit rate, purchase order, supplier, bill, DRR and GRIN information.")
     page.locator("#id_proc-qty").fill("1")
+    page.locator("#id_proc-currency").select_option("INR")
     page.locator("#id_proc-amount").fill("65000")
     page.locator("#id_proc-po_no").fill("PO-PWDEMO-UI-001")
     page.locator("#id_proc-po_date").fill(today.isoformat())
@@ -722,24 +757,44 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     page.locator("#id_proc-bill_no").fill("BILL-PWDEMO-UI-001")
     page.locator("#id_proc-bill_date").fill(today.isoformat())
     page.locator("#id_proc-bill_value").fill("65000")
+    page.locator("#id_proc-drr_no").fill("DRR-PWDEMO-UI-001")
+    page.locator("#id_proc-drr_date").fill(today.strftime("%d-%m-%Y"))
+    page.locator("#id_proc-grin_no").fill("GRIN-PWDEMO-UI-001")
+    page.locator("#id_proc-grin_date").fill(today.strftime("%d-%m-%Y"))
 
     narrated_click(page, tour, page.get_by_role("button", name="Stock and installation"), "Expand the stock and installation section.")
-    tour.action(page, "Enter the stock-entry reference, installation date, warranty and condition.")
+    tour.action(page, "Enter the stock-entry reference, installation date, warranty, working status and log book.")
     page.locator("#id_install-stock_entry_reference").fill("SE-PWDEMO-UI-001")
     page.locator("#id_install-date_of_installation").fill(today.isoformat())
     page.locator("#id_install-warranty_period_months").fill("36")
-    page.locator("#id_install-status_of_asset").fill("Working")
+    page.locator("#id_install-status_of_asset").select_option("Working")
+    page.locator("#id_install-log_book_maintained").select_option("true")
     narrated_click(page, tour, page.get_by_role("button", name="Save asset"), "Save the complete asset record.")
     expect(page.get_by_text("Asset created successfully.")).to_be_visible()
     expect(page.get_by_role("heading", name=ui_asset_code)).to_be_visible()
+    expect(page.locator("dl").get_by_text("PIR", exact=True)).to_be_visible()
     tour.checkpoint(page, "Register a complete asset with procurement and installation")
+
+    narrated_click(page, tour, page.get_by_role("link", name="Add accessory").first, "Register a monitor as an accessory of this computer.")
+    tour.action(page, "The accessory form is pre-filled from the main item; enter the monitor's own details and serial number.")
+    page.locator("#id_asset_code").fill(ui_accessory_code)
+    page.locator("#id_brief_description").fill("Playwright UI accessory monitor")
+    page.locator("#id_make").fill("Automation Make")
+    page.locator("#id_item_sl_no").fill("SN-PWDEMO-UI-ACC-001")
+    narrated_click(page, tour, page.get_by_role("button", name="Save asset"), "Save the accessory.")
+    expect(page.get_by_text("Asset created successfully.")).to_be_visible()
+    narrated_click(page, tour, page.locator("dl").get_by_role("link", name=ui_asset_code), "Open the main item to see its accessories.")
+    expect(page.get_by_role("link", name=ui_accessory_code)).to_be_visible()
+    tour.checkpoint(page, "Accessory registered as a sub-part of the main item")
 
     click_nav(page, tour, "Movements")
     narrated_click(page, tour, page.get_by_role("link", name="Transfer"), "Open the asset-transfer workflow.")
-    tour.action(page, "Choose the asset, destination, recipient, voucher and transfer date.")
-    page.locator("#id_asset").select_option(label=f"{ui_asset_code} - Playwright UI registered laptop")
+    tour.action(page, "Search for the asset, review its details, then choose destination, recipient, PIR/DIR change, voucher and transferred date.")
+    page.get_by_role("searchbox", name="Search Asset").fill(ui_asset_code)
+    expect(page.locator("#asset-summary")).to_contain_text("Playwright UI accessory monitor")
     page.locator("#id_destination").select_option(label="PW Demo Lab / PW-202")
     page.locator("#id_recipient").select_option(label="PWEMP002 - Playwright Demo Recipient")
+    page.locator("#id_inventory_type").select_option("DIR")
     page.locator("#id_voucher_number").fill("PWDEMO-TRANS-001")
     page.locator("#id_movement_date").fill(today.isoformat())
     page.locator("#id_remarks").fill("PWDEMO UI transfer")
@@ -749,20 +804,22 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     expect(page.locator("dl").get_by_text("PW Demo Lab / PW-202", exact=True)).to_be_visible()
     expect(page.locator("dl").get_by_text("PWEMP002 - Playwright Demo Recipient", exact=True)).to_be_visible()
     expect(page.get_by_text("PWDEMO-TRANS-001")).to_be_visible()
+    expect(page.get_by_text("PIR/DIR: PIR \u2192 DIR")).to_be_visible()
+    expect(page.locator("tr", has_text=ui_accessory_code)).to_contain_text("PW Demo Lab / PW-202")
     tour.checkpoint(page, "Transfer workflow and movement history")
 
     click_nav(page, tour, "Movements")
     narrated_click(page, tour, page.get_by_role("link", name="Return to stock"), "Open the return-to-stock workflow.")
-    tour.action(page, "Choose Central Stores and enter the return reference and employee.")
+    tour.action(page, "Choose the returned stock location, return-from name, voucher and return clause.")
     page.locator("#id_asset").select_option(label=f"{ui_asset_code} - Playwright UI registered laptop")
     page.locator("#id_stock_location").select_option(label="PW Demo Central Stores / PW-ST-01")
     page.locator("#id_returned_by").select_option(label="PWEMP002 - Playwright Demo Recipient")
     page.locator("#id_voucher_number").fill("PWDEMO-RETURN-001")
     page.locator("#id_movement_date").fill(today.isoformat())
-    page.locator("#id_return_clause").fill("Returned after automation demonstration")
+    page.locator("#id_return_clause").select_option("Surplus")
     page.locator("#id_remarks").fill("PWDEMO UI return")
     narrated_click(page, tour, page.get_by_role("button", name="Record return"), "Record the return and restore the asset to stock.")
-    expect(page.get_by_text("In stock", exact=True)).to_be_visible()
+    expect(page.locator("dl").get_by_text("In stock", exact=True)).to_be_visible()
     expect(page.locator("dl").get_by_text("PW Demo Central Stores / PW-ST-01", exact=True)).to_be_visible()
     expect(page.get_by_text("PWDEMO-RETURN-001")).to_be_visible()
     tour.checkpoint(page, "Return-to-stock workflow and second movement record")
@@ -781,7 +838,7 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     expect(page.locator(".text-muted")).to_contain_text("Closed")
     expect(page.get_by_text("Out: Yes | In: Yes")).to_be_visible()
     narrated_click(page, tour, page.get_by_role("link", name=ui_asset_code), "Open the asset and verify it returned to stock.")
-    expect(page.get_by_text("In stock", exact=True)).to_be_visible()
+    expect(page.locator("dl").get_by_text("In stock", exact=True)).to_be_visible()
     expect(page.locator("dl").get_by_text("PW Demo Central Stores / PW-ST-01", exact=True)).to_be_visible()
     tour.checkpoint(page, "Temporary gate pass: request, Stores approval, outward and inward")
 
@@ -813,8 +870,31 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     expect(page.get_by_text("Outside premises", exact=True)).to_be_visible()
     tour.checkpoint(page, "Permanent gate pass remains outward with no inward action")
 
+    create_gatepass(
+        page,
+        tour,
+        asset_code="PWDEMO-BASE-001",
+        gatepass_type="PERMANENT",
+        purpose="PWDEMO request to be rejected",
+        destination="Not approved",
+        expected_return=None,
+    )
+    narrated_click(page, tour, page.get_by_role("button", name="Reject"), "Open the rejection panel.")
+    page.locator("#id_reason").fill("PWDEMO item is still required in the division")
+    narrated_click(page, tour, page.get_by_role("button", name="Confirm rejection"), "Reject the gate pass with a reason.")
+    expect(page.locator(".alert-danger")).to_contain_text("PWDEMO item is still required in the division")
+    tour.checkpoint(page, "Gate pass rejected with a reason")
+
     click_nav(page, tour, "Disposal")
-    narrated_click(page, tour, page.get_by_role("link", name="New record"), "Start a new disposal proposal.")
+    narrated_click(page, tour, page.get_by_role("link", name="Stores returns"), "Open the Stores returns tab.")
+    page.locator("#clause").select_option("Surplus")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("tr", has_text=ui_asset_code)).to_contain_text("Surplus")
+    tour.checkpoint(page, "Stores returns tab with return clause")
+
+    click_nav(page, tour, "Disposal")
+    narrated_click(page, tour, page.get_by_role("link", name="Disposal records"), "Return to the disposal records tab.")
+    narrated_click(page, tour, page.get_by_role("link", name="New record"), "Start a new disposal record.")
     tour.action(page, "Select the disposal asset and enter lot, file and book-value information.")
     page.locator("#id_asset").select_option(label="PWDEMO-DISP-001 - Asset for disposal and auction demonstration")
     page.locator("#id_lot_name").fill("PWDEMO Lot 01")
@@ -822,7 +902,7 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     page.locator("#id_total_book_value").fill("25000")
     page.locator("#id_financial_year").fill("2026-27")
     page.locator("#id_remarks").fill("PWDEMO disposal proposal")
-    narrated_click(page, tour, page.get_by_role("button", name="Create proposal"), "Create the disposal record in Proposed status.")
+    narrated_click(page, tour, page.get_by_role("button", name="Save", exact=True), "Save the disposal record in Proposed status.")
     row = page.locator("tr", has_text="PWDEMO-DISP-001")
     expect(row.get_by_text("Proposed", exact=True)).to_be_visible()
     narrated_click(page, tour, row.get_by_role("link", name="Edit"), "Open the proposal for authorized approval.")
@@ -862,6 +942,20 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     expect(page.get_by_role("link", name="PWDEMO-IMP-001")).to_be_visible()
     tour.checkpoint(page, "Imported asset verified in the searchable register")
 
+    click_nav(page, tour, "Verification")
+    narrated_click(page, tour, page.get_by_role("link", name="Record verification"), "Start a physical verification.")
+    tour.action(page, "Choose the demo office and list the assets expected there.")
+    page.locator("#id_location").select_option(label="PW Demo Office / PW-101")
+    narrated_click(page, tour, page.get_by_role("button", name="List assets"), "List the assets expected at this location.")
+    narrated_click(page, tour, page.get_by_role("button", name="Mark all available"), "Mark every listed asset as available.")
+    overdue_row = page.locator("tr", has_text="PWDEMO-OVERDUE-001")
+    overdue_row.get_by_label("Not available").check()
+    overdue_row.get_by_role("textbox").fill("PWDEMO out for calibration")
+    narrated_click(page, tour, page.get_by_role("button", name="Save verification"), "Save the verification results.")
+    expect(page.get_by_text("Saved verification for")).to_be_visible()
+    expect(page.locator("tr", has_text="PWDEMO-OVERDUE-001")).to_contain_text("Not available")
+    tour.checkpoint(page, "Physical verification of assets")
+
     click_nav(page, tour, "Reports")
     expect(page.get_by_text("Acquisition value", exact=True)).to_be_visible()
     expect(page.get_by_text("PWDEMO overdue reporting scenario")).to_be_visible()
@@ -872,9 +966,20 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     download.save_as(str(csv_path))
     assert csv_path.exists() and csv_path.stat().st_size > 0
     with csv_path.open(newline="", encoding="utf-8") as csv_file:
-        exported_codes = {row[0] for row in csv.reader(csv_file) if row}
+        exported_codes = {row[2] for row in csv.reader(csv_file) if len(row) > 2}
     assert {"PWDEMO-BASE-001", "PWDEMO-IMP-001", ui_asset_code}.issubset(exported_codes)
     tour.checkpoint(page, "Reports, overdue pass visibility and CSV export")
+
+    narrated_click(page, tour, page.get_by_role("link", name="Asset reports (date-wise, PIR/DIR)"), "Open the configurable asset reports.")
+    tour.action(page, "Choose a Division-wise PIR report for this month's registrations.")
+    page.locator("#id_group_by").select_option("division")
+    page.locator("#id_inventory_type").select_option("PIR")
+    page.locator("#id_date_from").fill(today.replace(day=1).strftime("%d-%m-%Y"))
+    page.locator("#id_date_to").fill(today.strftime("%d-%m-%Y"))
+    narrated_click(page, tour, page.get_by_role("button", name="Generate"), "Generate the report.")
+    expect(page.get_by_text("Division-wise summary")).to_be_visible()
+    expect(page.locator("tr", has_text="Playwright Demo Division").first).to_be_visible()
+    tour.checkpoint(page, "Date-wise PIR/DIR report grouped by division")
 
     click_nav(page, tour, "Administration")
     expect(page.get_by_role("heading", name="Site administration")).to_be_visible()
@@ -889,6 +994,12 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     page.goto(f"{base_url}/admin/core/supplier/", wait_until="networkidle")
     expect(page.get_by_text("PW Demo Supplier")).to_be_visible()
     tour.checkpoint(page, "Administration master data: divisions, locations, employees and suppliers")
+
+    page.goto(f"{base_url}/admin/core/employee/add/", wait_until="networkidle")
+    narrated_click(page, tour, page.locator("#id_date_of_joining + .dp-toggle"), "Open the calendar beside Date of joining.")
+    page.locator(".dp-popup .dp-year").select_option(str(today.year - 10))
+    expect(page.locator(".dp-popup")).to_be_visible()
+    tour.checkpoint(page, "Employee master with year-wise calendar", full_page=False)
 
     page.goto(f"{base_url}/admin/auth/user/", wait_until="networkidle")
     page.locator("#searchbar").fill(VIEWER_USERNAME)

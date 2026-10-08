@@ -11,6 +11,7 @@ class GatePass(TimeStampedModel):
         PERMANENT = "PERMANENT", "Permanent"
     class Status(models.TextChoices):
         REQUESTED = "REQUESTED", "Requested"
+        DIVISION_APPROVED = "DIVISION_APPROVED", "Division approved"
         STORES_APPROVED = "STORES_APPROVED", "Stores approved"
         REJECTED = "REJECTED", "Rejected"
         OUTWARD = "OUTWARD", "Marked outward"
@@ -25,6 +26,10 @@ class GatePass(TimeStampedModel):
     destination = models.CharField(max_length=250, blank=True)
     expected_return_date = models.DateField(null=True, blank=True)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="requested_gatepasses")
+    division_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="division_approved_gatepasses")
+    rejected_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_gatepasses")
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True)
     stores_marked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="stores_gatepasses")
     security_out_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="security_out_gatepasses")
     security_in_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="security_in_gatepasses")
@@ -35,6 +40,7 @@ class GatePass(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
         permissions = [
+            ("division_approve_gatepass", "Can approve or reject gate passes as division admin"),
             ("approve_gatepass", "Can approve gate passes in stores"),
             ("security_scan_gatepass", "Can mark gate pass outward and inward"),
         ]
@@ -52,4 +58,4 @@ class GatePassItem(TimeStampedModel):
     remarks = models.CharField(max_length=250, blank=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["gatepass", "asset"], name="unique_asset_per_gatepass")]
-    def __str__(self): return f"{self.gatepass} / {self.asset.asset_code}"
+    def __str__(self): return f"{self.gatepass} / {self.asset.display_code}"

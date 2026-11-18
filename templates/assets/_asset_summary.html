@@ -14,7 +14,8 @@
       <dt class="col-5">Division</dt><dd class="col-7">{{ asset.division|default:"-" }}</dd>
       <dt class="col-5">Custodian</dt><dd class="col-7">{{ asset.current_custodian|default:"-" }}</dd>
       <dt class="col-5">Accessories</dt><dd class="col-7">{% for acc in accessories %}{{ acc.display_code }} - {{ acc.brief_description }}{% if not forloop.last %}<br>{% endif %}{% empty %}None{% endfor %}</dd>
-    </dl>
+    <dt class="col-sm-5">NC No.</dt><dd class="col-sm-7">{{ asset.nc_no|default:"-" }}{% if asset.nc_date %} ({{ asset.nc_date|date:"d-m-Y" }}){% endif %}</dd>
+</dl>
   </div>
 </div>
 {% else %}<div class="text-muted small">Choose an asset to see its details here.</div>{% endif %}

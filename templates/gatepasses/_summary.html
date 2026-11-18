@@ -1,0 +1,19 @@
+{% if perms.gatepasses.view_gatepass %}
+<div class="row g-3 mb-4">
+  {% for label,value in gatepass_cards %}
+  <div class="col-sm-6 col-xl-3"><div class="card h-100">
+    <div class="card-body"><div class="text-muted">{{ label }}</div><div class="display-6">{{ value }}</div></div>
+  </div></div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if overdue_gatepasses %}
+<div class="alert alert-warning" role="alert">
+  <strong>Overdue temporary gate passes</strong>
+  <ul class="mb-0">
+    {% for gp in overdue_gatepasses %}
+    <li><a href="{% url 'gatepasses:detail' gp.pk %}">{{ gp.gatepass_no }}</a> · Expected {{ gp.expected_return_date|date:"d-m-Y" }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

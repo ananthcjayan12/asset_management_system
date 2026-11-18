@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3">{{ label }}</h1>
+<p>{{ movement.asset.display_code }} · {{ movement.get_movement_type_display }} · {{ movement.get_workflow_status_display }}</p>
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="status" value="{{ movement.workflow_status }}">
+  {{ form.as_p }}
+  <button class="btn btn-primary">{{ label }}</button>
+  <a class="btn btn-link" href="{% url 'movements:list' %}">Cancel</a>
+</form>
+{% endblock %}

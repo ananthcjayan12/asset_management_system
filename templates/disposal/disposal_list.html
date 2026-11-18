@@ -5,10 +5,51 @@
   <li class="nav-item"><a class="nav-link {% if tab == 'returns' %}active{% endif %}" href="?tab=returns">Stores returns</a></li>
 </ul>
 {% if tab == 'returns' %}
-<form class="mb-3 d-flex gap-2 align-items-center"><input type="hidden" name="tab" value="returns"><label for="clause" class="fw-semibold">Return clause</label><select id="clause" name="clause" class="form-select w-auto" onchange="this.form.submit()"><option value="">All (Surplus / Obsolete / Unserviceable)</option>{% for v,l in clauses %}<option value="{{ v }}" {% if clause == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form>
-<div class="table-responsive"><table class="table table-hover"><thead><tr><th>Asset</th><th>Description</th><th>Return clause</th><th>Returned on</th><th>Return voucher</th><th>Stores location</th><th></th></tr></thead><tbody>
-{% for a in returns %}<tr><td><a href="{% url 'assets:detail' a.pk %}">{{ a.display_code }}</a></td><td>{{ a.brief_description }}</td><td>{{ a.return_clause|default:"-" }}</td><td>{{ a.return_date|date:"d-m-Y"|default:"-" }}</td><td>{{ a.return_voucher|default:"-" }}</td><td>{{ a.current_location|default:"-" }}</td><td>{% if perms.disposal.classify_lot and perms.disposal.add_disposalrecord %}<a href="{% url 'disposal:create' %}?asset={{ a.pk }}">Classify into lot</a>{% endif %}</td></tr>
-{% empty %}<tr><td colspan="7">No returned items awaiting lot classification.</td></tr>{% endfor %}</tbody></table></div>
+<div class="row g-3 mb-3">
+  {% for label,count in category_counts %}
+  <div class="col-sm-4"><div class="card"><div class="card-body">
+    <div class="text-muted">{{ label }}</div><strong class="fs-4">{{ count }}</strong>
+  </div></div></div>
+  {% endfor %}
+</div>
+<form class="mb-3 d-flex gap-2 flex-wrap align-items-center">
+  <input type="hidden" name="tab" value="returns">
+  <label for="clause" class="fw-semibold">Return clause</label>
+  <select id="clause" name="clause" class="form-select w-auto">
+    <option value="">All clauses</option>
+    {% for v,l in clauses %}<option value="{{ v }}" {% if clause == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select>
+  <label for="category" class="fw-semibold">Material category</label>
+  <select id="category" name="category" class="form-select w-auto">
+    <option value="">All categories</option>
+    {% for v,l in categories %}<option value="{{ v }}" {% if category == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline-primary">Filter</button>
+</form>
+<div class="table-responsive"><table class="table table-hover">
+<thead><tr><th>Asset / NC No.</th><th>Description</th><th>Category</th><th>Return type</th><th>Return clause</th><th>Workflow status</th><th>Returned by</th><th>Stores location</th><th>Lot</th></tr></thead>
+<tbody>
+{% for movement in returns %}
+  <tr>
+    <td><a href="{% url 'assets:detail' movement.asset_id %}">{{ movement.asset.display_code }}</a><br><small>{{ movement.asset.nc_no|default:"-" }}</small></td>
+    <td>{{ movement.asset.brief_description }}</td>
+    <td>{{ movement.get_material_category_display|default:"-" }}</td>
+    <td>{{ movement.get_return_nature_display|default:"-" }}</td>
+    <td>{{ movement.return_clause|default:"-" }}</td>
+    <td>{{ movement.get_workflow_status_display }}</td>
+    <td>{{ movement.return_from_name|default:movement.from_employee|default:"-" }}</td>
+    <td>{{ movement.to_location|default:"-" }}</td>
+    <td>{% if movement.workflow_status == 'COMPLETED' %}
+      {% if movement.asset.disposal_record %}
+        {{ movement.asset.disposal_record.lot_name|default:"-" }}
+        {% if perms.disposal.classify_lot and perms.disposal.change_disposalrecord %}<a href="{% url 'disposal:update' movement.asset.disposal_record.pk %}">Edit lot</a>{% endif %}
+      {% elif perms.disposal.classify_lot and perms.disposal.add_disposalrecord and movement.asset.current_status == 'IN_STOCK' %}
+        <a href="{% url 'disposal:create' %}?asset={{ movement.asset_id }}">Classify into lot</a>
+      {% endif %}
+    {% endif %}</td>
+  </tr>
+{% empty %}<tr><td colspan="9">No matching Stores returns.</td></tr>{% endfor %}
+</tbody></table></div>
 {% else %}
 <div class="table-responsive"><table class="table table-hover"><thead><tr><th>Asset</th><th>Status</th><th>Lot</th><th>File no.</th><th>Auction ID</th><th>Buyer</th><th>Sale value</th><th></th></tr></thead><tbody>{% for r in records %}<tr><td><a href="{% url 'assets:detail' r.asset.pk %}">{{ r.asset.display_code }}</a></td><td>{{ r.get_status_display }}</td><td>{{ r.lot_name }}</td><td>{{ r.disposal_file_no }}</td><td>{{ r.auction_id }}</td><td>{{ r.h1_buyer }}</td><td>{{ r.realized_sale_value|default:"-" }}</td><td>{% if perms.disposal.change_disposalrecord %}<a href="{% url 'disposal:update' r.pk %}">Edit</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="8">No disposal records.</td></tr>{% endfor %}</tbody></table></div>
 {% endif %}

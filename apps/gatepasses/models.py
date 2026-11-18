@@ -12,6 +12,8 @@ class GatePass(TimeStampedModel):
     class Status(models.TextChoices):
         REQUESTED = "REQUESTED", "Requested"
         DIVISION_APPROVED = "DIVISION_APPROVED", "Division approved"
+        PENDING_DIRECTOR = "PENDING_DIRECTOR", "Pending Director approval"
+        DIRECTOR_APPROVED = "DIRECTOR_APPROVED", "Director approved"
         STORES_APPROVED = "STORES_APPROVED", "Stores approved"
         REJECTED = "REJECTED", "Rejected"
         OUTWARD = "OUTWARD", "Marked outward"
@@ -27,6 +29,8 @@ class GatePass(TimeStampedModel):
     expected_return_date = models.DateField(null=True, blank=True)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="requested_gatepasses")
     division_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="division_approved_gatepasses")
+    director_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="director_approved_gatepasses")
+    attachment = models.FileField(upload_to="gatepass_attachments/%Y/%m/", blank=True, verbose_name="Attach file")
     rejected_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_gatepasses")
     rejected_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True)
@@ -41,6 +45,7 @@ class GatePass(TimeStampedModel):
         ordering = ["-created_at"]
         permissions = [
             ("division_approve_gatepass", "Can approve or reject gate passes as division admin"),
+            ("director_approve_gatepass", "Can approve permanent gate passes as Director"),
             ("approve_gatepass", "Can approve gate passes in stores"),
             ("security_scan_gatepass", "Can mark gate pass outward and inward"),
         ]

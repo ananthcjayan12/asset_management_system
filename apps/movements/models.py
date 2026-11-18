@@ -9,6 +9,25 @@ class AssetMovement(TimeStampedModel):
         OBSOLETE = "Obsolete", "Obsolete"
         UNSERVICEABLE = "Unserviceable", "Unserviceable"
 
+    class MaterialCategory(models.TextChoices):
+        EWASTE = "E-Waste", "E-Waste"
+        FURNITURE = "Furniture", "Furniture"
+        MACHINERY = "Machinery", "Machinery"
+
+    class ReturnNature(models.TextChoices):
+        RETURNABLE = "RETURNABLE", "Returnable"
+        NON_RETURNABLE = "NON_RETURNABLE", "Non-returnable"
+
+    class WorkflowStatus(models.TextChoices):
+        PENDING_HOD = "PENDING_HOD", "Pending Dept HOD"
+        PENDING_RECIPIENT = "PENDING_RECIPIENT", "Pending Receiving Staff"
+        PENDING_RECEIVING_HOD = "PENDING_RECEIVING_HOD", "Pending Receiving Dept HOD"
+        PENDING_CA = "PENDING_CA", "Pending Certifying Authority (CA)"
+        PENDING_SO = "PENDING_SO", "Pending SO-Stores"
+        PENDING_DA = "PENDING_DA", "Pending Dealing Assistant (DA)"
+        COMPLETED = "COMPLETED", "Completed"
+        REJECTED = "REJECTED", "Rejected"
+
     class Type(models.TextChoices):
         INITIAL_ASSIGNMENT = "INITIAL_ASSIGNMENT", "Initial assignment"
         TRANSFER = "TRANSFER", "Transfer"
@@ -50,9 +69,33 @@ class AssetMovement(TimeStampedModel):
     return_clause = models.TextField(blank=True, choices=ReturnClause.choices)
     return_from_division = models.ForeignKey(Division, null=True, blank=True, on_delete=models.PROTECT)
 
+    workflow_status = models.CharField(max_length=30, choices=WorkflowStatus.choices, default=WorkflowStatus.COMPLETED)
+    material_category = models.CharField(max_length=30, blank=True, choices=MaterialCategory.choices)
+    return_nature = models.CharField(max_length=20, blank=True, choices=ReturnNature.choices)
+    include_accessories = models.BooleanField(default=False)
+    previous_asset_status = models.CharField(max_length=30, blank=True, choices=Asset.Status.choices)
+    rejection_reason = models.TextField(blank=True)
+    initiated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="initiated_movements")
+    hod_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="hod_approved_movements")
+    recipient_accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="recipient_accepted_movements")
+    receiving_hod_approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="receiving_hod_approved_movements")
+    ca_certified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="ca_certified_movements")
+    so_marked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="so_marked_movements")
+    da_completed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="da_completed_movements")
+    rejected_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="rejected_movements")
+
     class Meta:
         ordering = ["-movement_date", "-created_at"]
-        permissions = [("approve_assetmovement", "Can approve and execute asset movements")]
+        permissions = [
+            ("approve_assetmovement", "Can approve and execute asset movements"),
+            ("initiate_transfer", "Can initiate asset transfer request"),
+            ("accept_transfer", "Can accept or reject incoming asset transfer"),
+            ("initiate_return", "Can initiate store return request"),
+            ("hod_approve_movement", "Can approve or reject movement as Dept HOD"),
+            ("ca_certify_return", "Can certify store return as CA"),
+            ("so_forward_movement", "Can mark and forward movement as SO-Stores"),
+            ("da_complete_movement", "Can complete movement entry as DA"),
+        ]
     def __str__(self): return f"{self.asset.display_code} - {self.get_movement_type_display()}"
 
     @property

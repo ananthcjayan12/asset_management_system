@@ -4,7 +4,7 @@
   <div class="d-flex flex-wrap gap-1">
     {% if perms.assets.change_asset %}<a class="btn btn-outline-primary" href="{% url 'assets:update' asset.pk %}">Edit</a>{% endif %}
     {% if perms.assets.add_asset and not asset.parent_asset %}<a class="btn btn-outline-primary" href="{% url 'assets:create' %}?parent={{ asset.pk }}">Add accessory</a>{% endif %}
-    {% if perms.movements.approve_assetmovement %}<a class="btn btn-outline-primary" href="{% url 'movements:transfer' %}?asset={{ asset.pk }}">Transfer this asset</a><a class="btn btn-outline-primary" href="{% url 'movements:return' %}?asset={{ asset.pk }}">Return this asset</a>{% endif %}
+    {% if can_transfer_asset %}<a class="btn btn-outline-primary" href="{% url 'movements:transfer' %}?asset={{ asset.pk }}">Transfer this asset</a>{% endif %}{% if can_return_asset %}<a class="btn btn-outline-primary" href="{% url 'movements:return' %}?asset={{ asset.pk }}">Return this asset</a>{% endif %}
     <a class="btn btn-outline-secondary" href="{% url 'assets:qr_image' asset.pk %}">QR PNG</a> <a class="btn btn-outline-secondary" href="{% url 'assets:qr_page' asset.qr_token %}">Open QR page</a>
   </div>
 </div>

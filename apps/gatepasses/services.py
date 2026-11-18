@@ -4,6 +4,7 @@ from django.utils import timezone
 from apps.assets.models import Asset
 from apps.core.services import audit
 from apps.movements.models import AssetMovement
+from apps.movements.services import pending_movements
 from .models import GatePass
 
 def user_division(user):
@@ -25,11 +26,28 @@ def division_approve_gatepass(*, gatepass, user):
     check_division_admin(gatepass, user)
     if not gatepass.items.exists():
         raise ValidationError("A gate pass must contain at least one asset.")
-    gatepass.status = GatePass.Status.DIVISION_APPROVED
+    gatepass.status = (
+        GatePass.Status.PENDING_DIRECTOR if gatepass.gatepass_type == GatePass.Type.PERMANENT
+        else GatePass.Status.DIVISION_APPROVED
+    )
     gatepass.division_approved_by = user
     gatepass.save(update_fields=["status", "division_approved_by", "updated_at"])
     audit(actor=user, action="GATEPASS_DIVISION_APPROVE", obj=gatepass, description=f"Division approved {gatepass.gatepass_no}")
     return gatepass
+
+@transaction.atomic
+def director_approve_gatepass(*, gatepass, user):
+    gatepass = GatePass.objects.select_for_update().get(pk=gatepass.pk)
+    if gatepass.status != GatePass.Status.PENDING_DIRECTOR or gatepass.gatepass_type != GatePass.Type.PERMANENT:
+        raise ValidationError("Only permanent gate passes awaiting Director approval can be approved here.")
+    if not user.has_perm("gatepasses.director_approve_gatepass"):
+        raise ValidationError("Director approval is required.")
+    gatepass.status = GatePass.Status.DIRECTOR_APPROVED
+    gatepass.director_approved_by = user
+    gatepass.save(update_fields=["status", "director_approved_by", "updated_at"])
+    audit(actor=user, action="GATEPASS_DIRECTOR_APPROVE", obj=gatepass, description=f"Director approved {gatepass.gatepass_no}")
+    return gatepass
+
 
 @transaction.atomic
 def reject_gatepass(*, gatepass, user, reason=""):
@@ -38,7 +56,10 @@ def reject_gatepass(*, gatepass, user, reason=""):
         if not user.has_perm("gatepasses.division_approve_gatepass"):
             raise ValidationError("Only the division admin can reject a newly requested gate pass.")
         check_division_admin(gatepass, user)
-    elif gatepass.status == GatePass.Status.DIVISION_APPROVED:
+    elif gatepass.status == GatePass.Status.PENDING_DIRECTOR:
+        if not user.has_perm("gatepasses.director_approve_gatepass"):
+            raise ValidationError("Only the Director can reject a gate pass at this stage.")
+    elif gatepass.status in {GatePass.Status.DIVISION_APPROVED, GatePass.Status.DIRECTOR_APPROVED}:
         if not user.has_perm("gatepasses.approve_gatepass"):
             raise ValidationError("Only Stores can reject a division-approved gate pass.")
     else:
@@ -54,8 +75,8 @@ def reject_gatepass(*, gatepass, user, reason=""):
 @transaction.atomic
 def approve_gatepass(*, gatepass, user):
     gatepass = GatePass.objects.select_for_update().get(pk=gatepass.pk)
-    if gatepass.status != GatePass.Status.DIVISION_APPROVED:
-        raise ValidationError("The division admin must approve the gate pass before Stores approval.")
+    if gatepass.status not in {GatePass.Status.DIVISION_APPROVED, GatePass.Status.DIRECTOR_APPROVED}:
+        raise ValidationError("The division admin must approve the gate pass before Stores approval, followed by the Director for permanent passes.")
     if not gatepass.items.exists():
         raise ValidationError("A gate pass must contain at least one asset.")
     gatepass.status = GatePass.Status.STORES_APPROVED
@@ -69,8 +90,13 @@ def mark_outward(*, gatepass, user):
     gatepass = GatePass.objects.select_for_update().get(pk=gatepass.pk)
     if gatepass.status != GatePass.Status.STORES_APPROVED:
         raise ValidationError("Gate pass must be approved by Stores before outward scanning.")
-    for item in gatepass.items.select_related("asset"):
+    for item in gatepass.items.order_by("asset_id"):
         asset = Asset.objects.select_for_update().get(pk=item.asset_id)
+        if asset.current_status in {
+            Asset.Status.OUTSIDE, Asset.Status.RETURN_PENDING, Asset.Status.DISPOSED,
+            Asset.Status.WRITTEN_OFF, Asset.Status.PASSED_OUT, Asset.Status.UNDER_DISPOSAL,
+        } or pending_movements(asset.movements.all()).exists():
+            raise ValidationError(f"{asset.display_code} is unavailable or has a pending movement.")
         AssetMovement.objects.create(
             asset=asset, movement_type=AssetMovement.Type.GATE_OUT,
             from_location=asset.current_location, from_employee=asset.current_custodian,
@@ -95,7 +121,7 @@ def mark_inward(*, gatepass, user):
         raise ValidationError("Only temporary gate passes can be marked inward.")
     if gatepass.status != GatePass.Status.OUTWARD:
         raise ValidationError("Only outward gate passes can be marked inward.")
-    for item in gatepass.items.select_related("asset"):
+    for item in gatepass.items.order_by("asset_id"):
         asset = Asset.objects.select_for_update().get(pk=item.asset_id)
         AssetMovement.objects.create(
             asset=asset, movement_type=AssetMovement.Type.GATE_IN,

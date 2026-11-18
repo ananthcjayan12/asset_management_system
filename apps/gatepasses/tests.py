@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 from apps.assets.models import Asset
 from .models import GatePass, GatePassItem
-from .services import approve_gatepass, division_approve_gatepass, mark_outward, mark_inward, reject_gatepass
+from .services import approve_gatepass, director_approve_gatepass, division_approve_gatepass, mark_outward, mark_inward, reject_gatepass
 class GatePassTests(TestCase):
     def test_temporary_outward_and_inward(self):
         user = get_user_model().objects.create_user("security")
@@ -21,7 +21,10 @@ class GatePassTests(TestCase):
         asset = Asset.objects.create(asset_code="A2", transaction_id="T2", brief_description="Permanent pass asset")
         gp = GatePass.objects.create(gatepass_type=GatePass.Type.PERMANENT, purpose="Permanent removal", requested_by=user)
         GatePassItem.objects.create(gatepass=gp, asset=asset)
+        user.is_superuser = True
+        user.save()
         division_approve_gatepass(gatepass=gp, user=user)
+        director_approve_gatepass(gatepass=gp, user=user)
         approve_gatepass(gatepass=gp, user=user)
         mark_outward(gatepass=gp, user=user)
         gp.refresh_from_db()
@@ -31,7 +34,8 @@ class GatePassTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "Only temporary gate passes"):
             mark_inward(gatepass=gp, user=user)
 
-class GatePassApprovalTests(TestCase):
+class GatePassApprovalFixtures:
+
     def setUp(self):
         from django.contrib.auth.models import Permission
         from apps.core.models import Division, Employee
@@ -49,11 +53,13 @@ class GatePassApprovalTests(TestCase):
         self.division_item = Asset.objects.create(brief_description="Division item", division=self.div)
         self.other_item = Asset.objects.create(brief_description="Other division", division=self.other)
 
-    def make_gatepass(self, division=None):
-        gp = GatePass.objects.create(gatepass_type=GatePass.Type.PERMANENT, purpose="Test", requested_by=self.requester, division=division or self.div)
+    def make_gatepass(self, division=None, gatepass_type=GatePass.Type.TEMPORARY):
+        gp = GatePass.objects.create(gatepass_type=gatepass_type, purpose="Test", requested_by=self.requester, division=division or self.div)
         GatePassItem.objects.create(gatepass=gp, asset=self.mine)
         return gp
 
+
+class GatePassApprovalTests(GatePassApprovalFixtures, TestCase):
     def test_requester_sees_only_own_and_division_items(self):
         from .forms import GatePassForm
         form = GatePassForm(user=self.requester)
@@ -90,3 +96,85 @@ class GatePassApprovalTests(TestCase):
         ensure_groups()
         self.assertFalse(Group.objects.get(name="System Administrator").permissions.filter(codename="security_scan_gatepass").exists())
         self.assertTrue(Group.objects.get(name="Security Officer").permissions.filter(codename="security_scan_gatepass").exists())
+
+
+class GatePassCLRIWorkflowTests(GatePassApprovalFixtures, TestCase):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+
+        self.director = get_user_model().objects.create_user("director")
+        self.director.user_permissions.add(Permission.objects.get(codename="director_approve_gatepass"))
+        self.security = get_user_model().objects.create_user("gate-security")
+        self.security.user_permissions.add(Permission.objects.get(codename="security_scan_gatepass"))
+        for user in (self.div_admin, self.director, self.stores, self.security):
+            user.user_permissions.add(Permission.objects.get(codename="view_gatepass"))
+
+    def test_permanent_pass_requires_director_and_persists_attachment(self):
+        from tempfile import TemporaryDirectory
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+        from django.urls import reverse
+
+        with TemporaryDirectory() as directory, override_settings(MEDIA_ROOT=directory):
+            self.client.force_login(self.requester)
+            response = self.client.post(reverse("gatepasses:create"), {
+                "gatepass_type": GatePass.Type.PERMANENT,
+                "assets": [self.mine.pk], "division": self.div.pk, "purpose": "Permanent removal",
+                "attachment": SimpleUploadedFile("approval.txt", b"document"),
+            })
+            gp = GatePass.objects.get(purpose="Permanent removal")
+            self.assertRedirects(response, reverse("gatepasses:detail", args=[gp.pk]))
+            self.assertTrue(gp.attachment.name.endswith("/approval.txt"))
+            download = self.client.get(reverse("gatepasses:attachment", args=[gp.pk]))
+            self.assertEqual(b"".join(download.streaming_content), b"document")
+            self.assertEqual(self.client.get(gp.attachment.url).status_code, 404)
+            self.client.force_login(self.div_admin)
+            self.client.post(reverse("gatepasses:division_approve", args=[gp.pk]))
+            gp.refresh_from_db()
+            self.assertEqual(gp.status, GatePass.Status.PENDING_DIRECTOR)
+            self.client.force_login(self.stores)
+            self.client.post(reverse("gatepasses:approve", args=[gp.pk]))
+            gp.refresh_from_db()
+            self.assertEqual(gp.status, GatePass.Status.PENDING_DIRECTOR)
+            self.client.force_login(self.director)
+            self.client.post(reverse("gatepasses:director_approve", args=[gp.pk]))
+            gp.refresh_from_db()
+            self.assertEqual(gp.director_approved_by, self.director)
+            self.client.force_login(self.stores)
+            self.client.post(reverse("gatepasses:approve", args=[gp.pk]))
+            self.client.force_login(self.security)
+            qr_url = reverse("assets:qr_page", args=[self.mine.qr_token])
+            self.assertContains(self.client.get(qr_url), "Scan &amp; Mark Outward")
+            self.client.post(reverse("gatepasses:outward", args=[gp.pk]))
+            gp.refresh_from_db()
+            self.assertEqual(gp.status, GatePass.Status.OUTWARD)
+            self.assertNotContains(self.client.get(qr_url), "Mark Inward")
+
+    def test_overdue_alerts_and_summary_cards(self):
+        from datetime import timedelta
+
+        from django.urls import reverse
+        from django.utils import timezone
+
+        overdue = GatePass.objects.create(
+            gatepass_type=GatePass.Type.TEMPORARY, status=GatePass.Status.OUTWARD,
+            expected_return_date=timezone.localdate() - timedelta(days=1), purpose="Overdue",
+            requested_by=self.requester,
+        )
+        GatePass.objects.create(gatepass_type=GatePass.Type.PERMANENT, status=GatePass.Status.OUTWARD, purpose="Permanent")
+        GatePass.objects.create(gatepass_type=GatePass.Type.TEMPORARY, status=GatePass.Status.CLOSED,
+                                inward_at=timezone.now(), purpose="Returned")
+        for user in (self.stores, self.security):
+            self.client.force_login(user)
+            for url in (reverse("core:dashboard"), reverse("gatepasses:list")):
+                response = self.client.get(url)
+                self.assertContains(response, "Overdue temporary gate passes")
+                self.assertContains(response, overdue.gatepass_no)
+                self.assertEqual(
+                    tuple(response.context[name] for name in ("gp_returned", "gp_non_return", "gp_moved_out", "gp_moved_in")),
+                    (1, 2, 2, 1),
+                )
+        self.client.force_login(self.requester)
+        self.assertNotContains(self.client.get(reverse("core:dashboard")), "Overdue temporary gate passes")

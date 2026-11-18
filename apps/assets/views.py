@@ -13,6 +13,9 @@ from django.urls import reverse
 from django.utils import timezone
 import qrcode
 from apps.core.services import audit
+from apps.gatepasses.models import GatePass
+from apps.movements.services import can_request_movement
+from .access import visible_assets
 from .forms import AssetForm, ProcurementForm, InstallationForm, VerificationFilterForm, VerificationReportForm
 from .models import Asset, AssetVerification, Procurement, Installation
 
@@ -25,8 +28,9 @@ def asset_list(request):
     status = request.GET.get("status", "").strip()
     inventory_type = request.GET.get("inventory_type", "").strip()
     qs = Asset.objects.select_related("current_location__building", "current_custodian", "parent_asset")
+    qs = visible_assets(qs, request.user)
     if q:
-        qs = qs.filter(Q(asset_code__icontains=q) | Q(transaction_id__icontains=q) | Q(brief_description__icontains=q) | Q(item_sl_no__icontains=q) | Q(make__icontains=q) | Q(model__icontains=q))
+        qs = qs.filter(Q(asset_code__icontains=q) | Q(transaction_id__icontains=q) | Q(nc_no__icontains=q) | Q(brief_description__icontains=q) | Q(item_sl_no__icontains=q) | Q(make__icontains=q) | Q(model__icontains=q))
     if status: qs = qs.filter(current_status=status)
     if inventory_type: qs = qs.filter(inventory_type=inventory_type)
     page = Paginator(qs, 25).get_page(request.GET.get("page"))
@@ -36,9 +40,20 @@ def asset_list(request):
 @login_required
 @permission_required("assets.view_asset", raise_exception=True)
 def asset_detail(request, pk):
-    asset = get_object_or_404(Asset.objects.select_related("current_location__building", "current_custodian", "division", "parent_asset", "procurement__supplier", "procurement__budget", "procurement__budget_classification", "procurement__project_code", "installation"), pk=pk)
+    qs = Asset.objects.select_related(
+        "current_location__building", "current_custodian", "division", "parent_asset",
+        "procurement__supplier", "procurement__budget", "procurement__budget_classification",
+        "procurement__project_code", "installation",
+    )
+    employee = getattr(request.user, "employee", None)
+    if employee:
+        history = qs.filter(Q(movements__from_employee=employee) | Q(movements__to_employee=employee))
+        qs = (visible_assets(qs, request.user) | history).distinct()
+    asset = get_object_or_404(qs, pk=pk)
     return render(request, "assets/asset_detail.html", {
         "asset": asset,
+        "can_transfer_asset": can_request_movement(request.user, asset, "initiate_transfer"),
+        "can_return_asset": can_request_movement(request.user, asset, "initiate_return"),
         "accessories": asset.accessories.select_related("current_location", "current_custodian"),
         "movements": asset.movements.select_related("from_location", "to_location", "from_employee", "to_employee", "from_division", "to_division", "approved_by")[:20],
         "verifications": asset.verifications.select_related("verified_by")[:5],
@@ -48,7 +63,9 @@ def asset_detail(request, pk):
 @permission_required("assets.view_asset", raise_exception=True)
 def asset_summary(request):
     """Partial used by the transfer/return forms to display the chosen asset's details."""
-    asset = Asset.objects.select_related("current_location__building", "current_custodian", "division").filter(pk=request.GET.get("asset") or 0).first()
+    asset_id = request.GET.get("asset", "")
+    qs = Asset.objects.select_related("current_location__building", "current_custodian", "division")
+    asset = visible_assets(qs, request.user).filter(pk=asset_id).first() if asset_id.isascii() and asset_id.isdecimal() and len(asset_id) < 19 else None
     return render(request, "assets/_asset_summary.html", {"asset": asset, "accessories": asset.accessories.all() if asset else []})
 
 @login_required
@@ -93,13 +110,20 @@ def qr_page(request, token):
     if not settings.QR_PAGE_PUBLIC and not request.user.is_authenticated:
         return redirect_to_login(request.get_full_path())
     asset = get_object_or_404(Asset.objects.select_related("current_location", "current_custodian"), qr_token=token, is_active=True)
-    active_gatepass = asset.gatepass_items.exclude(gatepass__status__in=["CLOSED", "REJECTED"]).select_related("gatepass").first()
+    items = asset.gatepass_items.exclude(
+        gatepass__status__in=[GatePass.Status.CLOSED, GatePass.Status.REJECTED]
+    ).select_related("gatepass").order_by("-gatepass__created_at")
+    actionable = items.filter(
+        Q(gatepass__status=GatePass.Status.STORES_APPROVED)
+        | Q(gatepass__status=GatePass.Status.OUTWARD, gatepass__gatepass_type=GatePass.Type.TEMPORARY)
+    )
+    active_gatepass = actionable.filter(gatepass__status=GatePass.Status.OUTWARD).first() or actionable.first() or items.first()
     return render(request, "assets/qr_page.html", {"asset": asset, "active_gatepass": active_gatepass.gatepass if active_gatepass else None})
 
 @login_required
 @permission_required("assets.view_asset", raise_exception=True)
 def qr_image(request, pk):
-    asset = get_object_or_404(Asset, pk=pk)
+    asset = get_object_or_404(visible_assets(Asset.objects.all(), request.user), pk=pk)
     url = request.build_absolute_uri(reverse("assets:qr_page", kwargs={"token": asset.qr_token}))
     img = qrcode.make(url)
     buffer = BytesIO(); img.save(buffer, format="PNG")

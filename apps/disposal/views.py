@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
-from django.db.models import OuterRef, Subquery
+from django.db.models import Count, Q
 from apps.assets.models import Asset
 from apps.core.services import audit
 from apps.movements.models import AssetMovement
@@ -12,17 +12,41 @@ from .models import DisposalRecord
 @login_required
 @permission_required("disposal.view_disposalrecord", raise_exception=True)
 def disposal_list(request):
-    tab = request.GET.get("tab", "records")
-    context = {"tab": tab, "records": DisposalRecord.objects.select_related("asset")}
+    user = request.user
+    employee = getattr(user, "employee", None)
+    scoped = not (user.has_perm("disposal.classify_lot") or user.has_perm("disposal.approve_disposalrecord")
+                  or user.groups.filter(name__in=["Auditor", "Report Viewer", "Director"]).exists())
+    tab = request.GET.get("tab", "returns" if scoped else "records")
+    records = DisposalRecord.objects.select_related("asset")
+    returns = AssetMovement.objects.filter(movement_type=AssetMovement.Type.RETURN).select_related(
+        "asset", "from_employee", "from_division", "to_location", "asset__disposal_record",
+    )
+    if scoped:
+        scope = Q(initiated_by=user)
+        if employee:
+            scope |= Q(from_employee=employee)
+        returns = returns.filter(scope)
+        records = records.filter(asset_id__in=returns.filter(
+            workflow_status=AssetMovement.WorkflowStatus.COMPLETED
+        ).values("asset_id"))
+    context = {"tab": tab, "records": records}
     if tab == "returns":
-        # Items returned to stores, with the clause recorded on their latest return.
-        latest_return = AssetMovement.objects.filter(asset=OuterRef("pk"), movement_type=AssetMovement.Type.RETURN).order_by("-movement_date", "-created_at")
-        returns = (Asset.objects.filter(current_status=Asset.Status.IN_STOCK, movements__movement_type=AssetMovement.Type.RETURN, disposal_record__isnull=True)
-                   .annotate(return_clause=Subquery(latest_return.values("return_clause")[:1]), return_date=Subquery(latest_return.values("movement_date")[:1]), return_voucher=Subquery(latest_return.values("voucher_number")[:1]))
-                   .select_related("current_location").distinct())
         clause = request.GET.get("clause", "")
-        if clause: returns = returns.filter(return_clause=clause)
-        context.update({"returns": returns, "clause": clause, "clauses": AssetMovement.ReturnClause.choices})
+        category = request.GET.get("category", "")
+        if clause:
+            returns = returns.filter(return_clause=clause)
+        counts = {
+            row["material_category"]: row["total"]
+            for row in returns.order_by().values("material_category").annotate(total=Count("pk"))
+        }
+        if category:
+            returns = returns.filter(material_category=category)
+        context.update({
+            "returns": returns, "clause": clause, "category": category,
+            "clauses": AssetMovement.ReturnClause.choices,
+            "categories": AssetMovement.MaterialCategory.choices,
+            "category_counts": [(label, counts.get(value, 0)) for value, label in AssetMovement.MaterialCategory.choices],
+        })
     return render(request, "disposal/disposal_list.html", context)
 
 @login_required

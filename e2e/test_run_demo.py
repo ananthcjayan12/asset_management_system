@@ -63,7 +63,7 @@ class RunnerUnitTests(unittest.TestCase):
             "templates/base.html": ["Assets", "Verification", "Movements", "Gate Passes", "Disposal", "Reports", "Administration"],
             "templates/assets/asset_detail.html": ["QR PNG", "Open QR page", "Movement history", "Procurement and installation"],
             "templates/movements/movement_list.html": ["Transfer", "Return to stock"],
-            "templates/gatepasses/gatepass_detail.html": ["Division approve", "Stores approve", "Reject", "Mark outward", "Mark inward"],
+            "templates/gatepasses/gatepass_detail.html": ["Dept HOD approve", "Director approve", "SO-Stores approve", "Reject", "Mark outward", "Mark inward"],
             "templates/imports/batch_detail.html": ["Confirm import", "valid", "invalid"],
             "templates/reporting/dashboard.html": ["Acquisition value", "Overdue temporary gate passes", "Download asset register CSV"],
         }

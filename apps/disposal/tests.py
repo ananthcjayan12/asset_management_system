@@ -16,10 +16,10 @@ class DisposalTests(TestCase):
         self.asset = Asset.objects.create(brief_description="Old printer")
         return_asset(asset=self.asset, stock_location=stock, returned_by=None, approved_by=self.stores, return_clause="Unserviceable")
 
-    def test_lot_classification_is_stores_only(self):
+    def test_lot_classification_is_available_to_da_and_stores(self):
         self.client.force_login(self.asset_admin)
         response = self.client.get("/disposal/new/")
-        self.assertTrue(response.context["form"].fields["lot_name"].disabled)
+        self.assertFalse(response.context["form"].fields["lot_name"].disabled)
         self.assertContains(response, ">Save<")
         self.client.force_login(self.stores)
         self.assertFalse(self.client.get("/disposal/new/").context["form"].fields["lot_name"].disabled)

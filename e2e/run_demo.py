@@ -100,7 +100,7 @@ STEP_DETAILS: dict[str, list[str]] = {
         "Leave it open so the Reports screen can identify it as overdue.",
     ],
     "Permanent gate pass remains outward with no inward action": [
-        "Create and approve a permanent gate pass.",
+        "Create a permanent gate pass and approve it through Dept HOD, Director and SO-Stores.",
         "Mark the asset outward.",
         "Confirm there is no inward button and the asset remains outside the premises.",
     ],
@@ -112,7 +112,7 @@ STEP_DETAILS: dict[str, list[str]] = {
     "Stores returns tab with return clause": [
         "Open Disposal and switch to the Stores returns tab.",
         "Returned items are listed with their Surplus / Obsolete / Unserviceable clause.",
-        "Only Stores can classify returned items into disposal lots.",
+        "SO-Stores and DA can classify completed returns into disposal lots.",
     ],
     "Disposal proposal, approval and auction final outcome": [
         "Create and save a disposal record for the prepared disposal asset.",
@@ -681,12 +681,21 @@ def create_gatepass(
 
 
 def approve_and_mark_outward(page: Page, tour: Tour) -> None:
-    narrated_click(page, tour, page.get_by_role("button", name="Division approve"), "Approve the request as the division admin.")
+    narrated_click(page, tour, page.get_by_role("button", name="Dept HOD approve"), "Approve the request as the division admin.")
     expect(page.locator(".alert")).to_contain_text("approved by the division")
-    narrated_click(page, tour, page.get_by_role("button", name="Stores approve"), "Approve the division-approved gate pass as Stores.")
+    director_approve = page.get_by_role("button", name="Director approve")
+    if director_approve.is_visible():
+        narrated_click(page, tour, director_approve, "Approve the permanent gate pass as Director.")
+    narrated_click(page, tour, page.get_by_role("button", name="SO-Stores approve"), "Approve the division-approved gate pass as Stores.")
     expect(page.locator(".alert")).to_contain_text("approved by Stores")
     narrated_click(page, tour, page.get_by_role("button", name="Mark outward"), "Record the security outward movement.")
     expect(page.locator(".alert")).to_contain_text("marked outward")
+
+
+
+def movement_action(page: Page, tour: Tour, voucher: str, label: str, narration: str) -> None:
+    row = page.get_by_role("row", name=re.compile(voucher))
+    narrated_click(page, tour, row.get_by_role("link", name=label, exact=True), narration)
 
 
 def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: Tour, import_path: Path, run_dir: Path) -> None:
@@ -798,7 +807,16 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     page.locator("#id_voucher_number").fill("PWDEMO-TRANS-001")
     page.locator("#id_movement_date").fill(today.isoformat())
     page.locator("#id_remarks").fill("PWDEMO UI transfer")
-    narrated_click(page, tour, page.get_by_role("button", name="Execute transfer"), "Execute the transfer and update the asset's custody.")
+    narrated_click(page, tour, page.get_by_role("button", name="Submit request"), "Submit the transfer for approval.")
+    for action, narration in [
+        ("Approve", "Approve as the sending Dept HOD."),
+        ("Accept transfer", "Accept the transfer. The same division skips the second HOD approval."),
+        ("Mark to DA", "Forward the transfer as SO-Stores."),
+        ("Complete entry", "Complete the transfer and update the asset custody as DA."),
+    ]:
+        movement_action(page, tour, "PWDEMO-TRANS-001", action, narration)
+        narrated_click(page, tour, page.get_by_role("button", name=action, exact=True), narration)
+    page.get_by_role("row", name=re.compile("PWDEMO-TRANS-001")).get_by_role("link", name=ui_asset_code).click()
     # The location also appears in movement history. Scope these checks to the
     # asset-details definition list so Playwright has exactly one match.
     expect(page.locator("dl").get_by_text("PW Demo Lab / PW-202", exact=True)).to_be_visible()
@@ -818,7 +836,18 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     page.locator("#id_movement_date").fill(today.isoformat())
     page.locator("#id_return_clause").select_option("Surplus")
     page.locator("#id_remarks").fill("PWDEMO UI return")
-    narrated_click(page, tour, page.get_by_role("button", name="Record return"), "Record the return and restore the asset to stock.")
+    page.locator("#id_material_category").select_option("E-Waste")
+    page.locator("#id_return_nature").select_option("RETURNABLE")
+    narrated_click(page, tour, page.get_by_role("button", name="Submit request"), "Submit the Stores return.")
+    for action, narration in [
+        ("Forward to CA", "Forward the return as Dept HOD."),
+        ("Certify return", "Certify the clause, material category and return type as CA."),
+        ("Mark to DA", "Confirm the Stores location and forward the return."),
+        ("Complete entry", "Complete the return and move the asset into stock as DA."),
+    ]:
+        movement_action(page, tour, "PWDEMO-RETURN-001", action, narration)
+        narrated_click(page, tour, page.get_by_role("button", name=action, exact=True), narration)
+    page.get_by_role("row", name=re.compile("PWDEMO-RETURN-001")).get_by_role("link", name=ui_asset_code).click()
     expect(page.locator("dl").get_by_text("In stock", exact=True)).to_be_visible()
     expect(page.locator("dl").get_by_text("PW Demo Central Stores / PW-ST-01", exact=True)).to_be_visible()
     expect(page.get_by_text("PWDEMO-RETURN-001")).to_be_visible()
@@ -888,6 +917,7 @@ def run_feature_tour(page: Page, context: BrowserContext, base_url: str, tour: T
     click_nav(page, tour, "Disposal")
     narrated_click(page, tour, page.get_by_role("link", name="Stores returns"), "Open the Stores returns tab.")
     page.locator("#clause").select_option("Surplus")
+    page.get_by_role("button", name="Filter", exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(page.locator("tr", has_text=ui_asset_code)).to_contain_text("Surplus")
     tour.checkpoint(page, "Stores returns tab with return clause")

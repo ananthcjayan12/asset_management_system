@@ -4,9 +4,9 @@ from django.core.paginator import Paginator
 from django.db.models import Count, Sum
 from django.http import HttpResponse
 from django.shortcuts import render
-from django.utils import timezone
+from apps.assets.access import visible_assets
 from apps.assets.models import Asset
-from apps.gatepasses.models import GatePass
+from apps.gatepasses.queries import gatepass_summary
 from .forms import GROUPINGS, AssetReportForm
 
 STATUS_LABELS = dict(Asset.Status.choices)
@@ -14,16 +14,17 @@ STATUS_LABELS = dict(Asset.Status.choices)
 def report_queryset(request):
     form = AssetReportForm(request.GET or None)
     qs = Asset.objects.select_related("current_location__building__centre", "current_custodian", "division", "procurement__supplier")
-    return form, form.filter(qs)
+    return form, form.filter(visible_assets(qs, request.user))
 
 @login_required
 @permission_required("assets.view_asset", raise_exception=True)
 def dashboard(request):
-    by_status = [{"label": STATUS_LABELS.get(r["current_status"], r["current_status"]), "count": r["count"]} for r in Asset.objects.values("current_status").annotate(count=Count("id")).order_by("current_status")]
-    by_type = Asset.objects.values("inventory_type").annotate(count=Count("id")).order_by("inventory_type")
-    by_location = Asset.objects.values("current_location__name").annotate(count=Count("id")).order_by("-count")[:20]
-    acquisition = Asset.objects.exclude(procurement__amount__isnull=True).values("procurement__currency").annotate(total=Sum("procurement__amount")).order_by("procurement__currency")
-    return render(request, "reporting/dashboard.html", {"by_status": by_status, "by_type": by_type, "by_location": by_location, "acquisition": acquisition, "overdue_gatepasses": GatePass.objects.filter(status=GatePass.Status.OUTWARD, expected_return_date__lt=timezone.localdate()).select_related("division")})
+    assets = visible_assets(Asset.objects.all(), request.user)
+    by_status = [{"label": STATUS_LABELS.get(r["current_status"], r["current_status"]), "count": r["count"]} for r in assets.values("current_status").annotate(count=Count("id")).order_by("current_status")]
+    by_type = assets.values("inventory_type").annotate(count=Count("id")).order_by("inventory_type")
+    by_location = assets.values("current_location__name").annotate(count=Count("id")).order_by("-count")[:20]
+    acquisition = assets.exclude(procurement__amount__isnull=True).values("procurement__currency").annotate(total=Sum("procurement__amount")).order_by("procurement__currency")
+    return render(request, "reporting/dashboard.html", {"by_status": by_status, "by_type": by_type, "by_location": by_location, "acquisition": acquisition, "overdue_gatepasses": gatepass_summary(request.user)["overdue_gatepasses"]})
 
 @login_required
 @permission_required("assets.view_asset", raise_exception=True)
@@ -50,10 +51,10 @@ def assets_csv(request):
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="asset-register.csv"'
     w = csv.writer(response)
-    w.writerow(["SL No", "Transaction ID", "RFID Code", "Type of Inventory", "Description", "Make", "Model", "Serial No", "Main Item", "Status", "Centre", "Building", "Location", "Room", "Division", "Custodian", "PO No", "Supplier", "Currency", "Amount / Unit Rate", "Bill Value", "DRR No", "GRIN No", "Remarks"])
+    w.writerow(["SL No", "Transaction ID", "RFID Code", "NC No", "NC Date", "Type of Inventory", "Description", "Make", "Model", "Serial No", "Main Item", "Status", "Centre", "Building", "Location", "Room", "Division", "Custodian", "PO No", "Supplier", "Currency", "Amount / Unit Rate", "Bill Value", "DRR No", "GRIN No", "Remarks"])
     for a in qs.select_related("parent_asset"):
         p = getattr(a, "procurement", None)
         loc = a.current_location
         building = getattr(loc, "building", None)
-        w.writerow([a.sl_no or "", a.transaction_id, a.asset_code or "", a.inventory_type, a.brief_description, a.make, a.model, a.item_sl_no, a.parent_asset.display_code if a.parent_asset else "", a.get_current_status_display(), getattr(getattr(building, "centre", None), "name", ""), getattr(building, "name", ""), getattr(loc, "name", ""), getattr(loc, "room_no", ""), getattr(a.division, "name", ""), a.current_custodian or "", getattr(p, "po_no", ""), getattr(getattr(p, "supplier", None), "name", ""), getattr(p, "currency", ""), getattr(p, "amount", ""), getattr(p, "bill_value", ""), getattr(p, "drr_no", ""), getattr(p, "grin_no", ""), a.remarks])
+        w.writerow([a.sl_no or "", a.transaction_id, a.asset_code or "", a.nc_no, f"{a.nc_date:%d-%m-%Y}" if a.nc_date else "", a.inventory_type, a.brief_description, a.make, a.model, a.item_sl_no, a.parent_asset.display_code if a.parent_asset else "", a.get_current_status_display(), getattr(getattr(building, "centre", None), "name", ""), getattr(building, "name", ""), getattr(loc, "name", ""), getattr(loc, "room_no", ""), getattr(a.division, "name", ""), a.current_custodian or "", getattr(p, "po_no", ""), getattr(getattr(p, "supplier", None), "name", ""), getattr(p, "currency", ""), getattr(p, "amount", ""), getattr(p, "bill_value", ""), getattr(p, "drr_no", ""), getattr(p, "grin_no", ""), a.remarks])
     return response

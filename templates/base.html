@@ -1,3 +1,4 @@
+{% load roles %}
 {% load static %}
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -21,7 +22,7 @@
 {% if perms.assets.view_asset %}<li class="nav-item"><a class="nav-link" href="{% url 'reporting:dashboard' %}">Reports</a></li>{% endif %}
 {% if perms.imports_app.view_importbatch %}<li class="nav-item"><a class="nav-link" href="{% url 'imports_app:list' %}">Import</a></li>{% endif %}
 {% if user.is_staff %}<li class="nav-item"><a class="nav-link" href="/admin/">Administration</a></li>{% endif %}
-</ul>{% if user.is_authenticated %}<span class="navbar-text me-3">{{ user.username }}</span><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="btn btn-outline-light btn-sm">Sign out</button></form>{% endif %}</div>
+</ul>{% if user.is_authenticated %}<span class="navbar-text me-3">{{ user.username }}{% role_labels user as role_display %}{% if role_display %}<small class="d-block">{{ role_display }}</small>{% endif %}</span><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="btn btn-outline-light btn-sm">Sign out</button></form>{% endif %}</div>
 </div></nav>
 <main class="container-fluid py-4">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}{% block content %}{% endblock %}</main>
 <script src="{% static 'vendor/bootstrap.bundle.min.js' %}"></script>
